@@ -5,10 +5,18 @@ function acceptsHtml(request) {
 
 export default {
   async fetch(request, env) {
-    //console.log(`Worker started at ${new Date().toISOString()}`);
-    //console.log(env);
     const url = new URL(request.url);
     console.log(`Request: ${request.method} ${url.pathname}${url.search}`);
+
+    // Route API requests first
+    if (url.pathname.startsWith("/api/")) {
+      try {
+        return await handleApi(request, env, url);
+      } catch (e) {
+        console.error("API error", e);
+        return json({ error: String(e?.message || e) }, 500);
+      }
+    }
 
     // Try to serve static assets (public/*) first
     if (env.ASSETS) {
@@ -141,3 +149,84 @@ function sanitizeName(name) {
   // remove control chars and collapse whitespace
   return name.replace(/[\u0000-\u001F\u007F]/g, "").replace(/\s+/g, " ").trim() || "Player";
 }
+
+// ----- Status/History API (Firestore/IndexedDB replacement) -----
+
+async function handleApi(request, env, url) {
+  const { pathname, searchParams } = url;
+  if (pathname === "/api/status") {
+    if (request.method === "GET") {
+      const userId = (searchParams.get("userId") || "").trim();
+      if (!userId) return json({ error: "userId required" }, 400);
+      const key = statusKey(userId);
+      const stored = env.KV ? await env.KV.get(key, { type: "json" }) : null;
+      const fallback = defaultLocation();
+      return json({ ok: true, status: stored || fallback });
+    }
+    if (request.method === "POST") {
+      const body = await safeJson(request);
+      if (!body || typeof body !== "object") return json({ error: "invalid json" }, 400);
+      const { userId, location } = body;
+      if (!userId || !location || !isFinite(location.lat) || !isFinite(location.lng)) {
+        return json({ error: "userId and numeric lat,lng required" }, 400);
+      }
+      const status = {
+        lat: Number(location.lat),
+        lng: Number(location.lng),
+        heading: isFinite(location.heading) ? Number(location.heading) : 0,
+        ts: Date.now(),
+      };
+      if (env.KV) {
+        await env.KV.put(statusKey(userId), JSON.stringify(status));
+      }
+      return json({ ok: true });
+    }
+    return json({ error: "method not allowed" }, 405, { Allow: "GET, POST" });
+  }
+
+  if (pathname === "/api/history") {
+    if (request.method === "GET") {
+      const userId = (searchParams.get("userId") || "").trim();
+      const day = (searchParams.get("day") || today()).trim();
+      if (!userId) return json({ error: "userId required" }, 400);
+      const key = historyKey(userId, day);
+      const items = env.KV ? await env.KV.get(key, { type: "json" }) : null;
+      return json({ ok: true, items: Array.isArray(items) ? items : [] });
+    }
+    if (request.method === "POST") {
+      const body = await safeJson(request);
+      if (!body || typeof body !== "object") return json({ error: "invalid json" }, 400);
+      const { userId, point } = body;
+      if (!userId || !point || !isFinite(point.lat) || !isFinite(point.lng)) {
+        return json({ error: "userId and numeric lat,lng required" }, 400);
+      }
+      const day = point.day || today();
+      const item = {
+        lat: Number(point.lat),
+        lng: Number(point.lng),
+        heading: isFinite(point.heading) ? Number(point.heading) : 0,
+        ts: isFinite(point.ts) ? Number(point.ts) : Date.now(),
+      };
+      let arr = [];
+      if (env.KV) {
+        const key = historyKey(userId, day);
+        const stored = await env.KV.get(key, { type: "json" });
+        arr = Array.isArray(stored) ? stored : [];
+        arr.push(item);
+        // Keep array from growing unbounded; trim to last N
+        const MAX_POINTS = 500;
+        if (arr.length > MAX_POINTS) arr = arr.slice(arr.length - MAX_POINTS);
+        await env.KV.put(key, JSON.stringify(arr));
+      }
+      return json({ ok: true });
+    }
+    return json({ error: "method not allowed" }, 405, { Allow: "GET, POST" });
+  }
+
+  return json({ error: "not found" }, 404);
+}
+
+function statusKey(userId) { return `status:v1:${userId}`; }
+function historyKey(userId, day) { return `history:v1:${userId}:${day}`; }
+function today() { return new Date().toISOString().slice(0, 10); }
+function defaultLocation() { return { lat: 37.769263, lng: -122.450727, heading: 165, ts: Date.now() }; }
