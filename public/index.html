@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Street View Walkthrough</title>
+    <style>
+      html, body { height: 100%; }
+      body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color: #111827; }
+      header { padding: .75rem 1rem; border-bottom: 1px solid #e5e7eb; display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+      header h1 { margin: 0; font-size: 1rem; font-weight: 600; }
+      header .row { display:flex; gap:.5rem; align-items:center; }
+      main { display: grid; grid-template-columns: 2fr 1fr; gap: 0; height: calc(100% - 3rem); }
+      #pano { width: 100%; height: 100%; }
+      #side { border-left: 1px solid #e5e7eb; padding: 1rem; overflow: auto; }
+      .controls { display:flex; gap:.5rem; margin:.5rem 0; flex-wrap:wrap; }
+      input, button, select { padding: .5rem .6rem; border:1px solid #d1d5db; border-radius: .375rem; }
+      button { cursor:pointer; background:#111827; color:white; border-color:#111827; }
+      button.ghost { background:white; color:#111827; }
+      .muted { color:#6b7280; }
+      .kvs { display:grid; grid-template-columns: auto 1fr; gap:.25rem .75rem; align-items:center; }
+      .section { margin: 1rem 0; }
+      .small { font-size: .875rem; }
+      .range { width: 100%; }
+      .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Street View Walkthrough</h1>
+      <div class="row">
+        <button id="connectBtn">Connect BLE</button>
+        <button id="disconnectBtn" class="ghost">Disconnect</button>
+        <label class="small muted">Secure context required (localhost/https)</label>
+      </div>
+    </header>
+    <main>
+      <div id="pano"></div>
+      <aside id="side">
+        <div class="section">
+          <h3>Device</h3>
+          <div class="kvs small">
+            <div class="muted">Device:</div><div id="deviceName">—</div>
+            <div class="muted">Service:</div><div id="serviceName">—</div>
+            <div class="muted">Status:</div><div id="status">Idle</div>
+          </div>
+        </div>
+        <div class="section">
+          <h3>Metrics</h3>
+          <div class="kvs">
+            <div class="muted">Speed:</div><div><span id="speed">0.0</span> m/s</div>
+            <div class="muted">Cadence:</div><div><span id="cadence">0</span> spm</div>
+            <div class="muted">Distance:</div><div><span id="distance">0.0</span> m</div>
+          </div>
+        </div>
+        <div class="section">
+          <h3>Controls</h3>
+          <div class="controls">
+            <button id="advanceBtn">Advance</button>
+            <button id="turnLeftBtn" class="ghost">Turn ◀︎</button>
+            <button id="turnRightBtn" class="ghost">Turn ▶︎</button>
+          </div>
+          <div class="controls grid2">
+            <label class="small">Meters per move
+              <input id="metersPerMove" type="number" min="1" max="50" value="8" />
+            </label>
+            <label class="small">Auto‑advance
+              <select id="autoAdvance">
+                <option value="on" selected>On</option>
+                <option value="off">Off</option>
+              </select>
+            </label>
+          </div>
+          <div class="small muted">Keyboard: Space=Advance, ◀︎/▶︎ turn, A toggle auto</div>
+        </div>
+        <div class="section">
+          <h3>Mock Speed (no BLE)</h3>
+          <input id="mockSpeed" class="range" type="range" min="0" max="4" step="0.1" value="0" />
+        </div>
+        <div class="section">
+          <h3>Start Location</h3>
+          <div class="controls">
+            <input id="lat" type="number" step="0.000001" placeholder="lat" />
+            <input id="lng" type="number" step="0.000001" placeholder="lng" />
+            <button id="goBtn">Go</button>
+          </div>
+          <div class="small muted">Defaults to San Francisco if empty.</div>
+        </div>
+      </aside>
+    </main>
+    <script src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_MAPS_API_KEY__&libraries=geometry" defer></script>
+    <script src="/app.js" type="module"></script>
+  </body>
+  </html>

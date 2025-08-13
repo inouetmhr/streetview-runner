@@ -1,0 +1,23 @@
+name = "svr-cf"
+main = "src/index.js"
+compatibility_date = "2024-09-19"
+
+ # The following configuration unconditionally invokes the Worker script at
+ # `src/index.ts`, which can programatically fetch assets via the ASSETS binding
+[assets]
+directory = "./public/"
+binding = "ASSETS"
+run_worker_first = true
+
+[dev]
+port = 8787
+
+[vars]
+# Replace in Cloudflare dashboard or with `wrangler secret put` for real key management
+GOOGLE_MAPS_API_KEY = "TESTTEST"
+
+[[kv_namespaces]]
+binding = "KV"
+# Placeholder IDs work for local dev; set real IDs after creating KV in Cloudflare
+id = "dev-kv-placeholder"
+preview_id = "dev-kv-placeholder"

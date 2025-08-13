@@ -1,0 +1,12 @@
+0 verbose cli /opt/homebrew/Cellar/node/24.5.0/bin/node /opt/homebrew/bin/npm
+1 info using npm@11.5.2
+2 info using node@v24.5.0
+3 silly config load:file:/opt/homebrew/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/tminoue/svr-cf/.npmrc
+5 silly config load:file:/Users/tminoue/svr-cf/.home/.npmrc
+6 silly config load:file:/opt/homebrew/etc/npmrc
+7 verbose title npm run dev --port 8788
+8 verbose argv "run" "dev" "--" "--port" "8788"
+9 verbose logfile logs-max:10 dir:/Users/tminoue/svr-cf/.home/.npm/_logs/2025-08-13T11_24_59_582Z-
+10 verbose logfile /Users/tminoue/svr-cf/.home/.npm/_logs/2025-08-13T11_24_59_582Z-debug-0.log
+11 silly logfile done cleaning log files
