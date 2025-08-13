@@ -4,8 +4,8 @@ function qs(id) { return document.getElementById(id); }
 
 class Metrics {
   constructor() {
-    this.speedMps = 0; // meters/second
-    this.cadenceSpm = 0; // steps per minute
+    this.speedKmh = 0; // km/h
+    this.cadenceRpm = 0; // rpm
     this.distanceM = 0;
     this.lastUpdate = performance.now();
   }
@@ -13,15 +13,16 @@ class Metrics {
     const now = performance.now();
     const dt = Math.max(0, (now - this.lastUpdate) / 1000);
     this.lastUpdate = now;
-    const v = this.speedMps || mockSpeedMps || 0;
+    const v = (this.speedKmh / 3.6) || mockSpeedMps || 0;
     this.distanceM += v * dt;
   }
   addDistance(deltaM, speedHintMps = null) {
     if (deltaM > 0 && Number.isFinite(deltaM)) {
       this.distanceM += deltaM;
     }
+    // speedHintMpsはm/sなので、km/hに変換して格納
     if (speedHintMps != null && Number.isFinite(speedHintMps)) {
-      this.speedMps = speedHintMps;
+      this.speedKmh = speedHintMps * 3.6;
     }
     this.lastUpdate = performance.now();
   }
@@ -35,9 +36,7 @@ class BLEWalker {
     this.metrics = new Metrics();
     this._activeService = null; // 'FTMS' | null
     this.usesDistanceFromSensor = false;
-    this._ftmsBaseM = null;
-    this._ftmsPrevM = null;
-    this._ftmsPrevT = null;
+    // no FTMS delta tracking needed; distance comes from total_distance
   }
   get activeService() { return this._activeService; }
   async connect() {
@@ -82,57 +81,87 @@ class BLEWalker {
     } catch { return false; }
   }
   _onFTMS(dv) {
-    // Indoor Bike Data (0x2AD2)
-    // Flags (uint16, little-endian) indicate presence of fields.
-    // Common fields:
-    //  bit0: Instantaneous Speed present (uint16, 1/100 km/h)
-    //  bit2: Instantaneous Cadence present (uint16, 1/2 rpm)
-    //  bit6: Instantaneous Power present (sint16, watts)
-    const flags = dv.getUint16(0, true);
-    let off = 2;
-    let speedMpsFromKmh = null;
-    if (flags & 0x0001) {
-      const speedKmh = dv.getUint16(off, true) / 100; off += 2;
-      speedMpsFromKmh = speedKmh / 3.6;
+    const data = this._parseIndoorBikeData(dv);
+    if (data.instantaneous_cadence) {
+      this.metrics.cadenceRpm = Math.round(data.instantaneous_cadence);
     }
-    if (flags & 0x0004) {
-      const cadenceRpm = dv.getUint16(off, true) / 2; off += 2;
-      this.metrics.cadenceSpm = Math.round(cadenceRpm); // display as cadence (rpm)
+    if (data.instantaneous_speed) {
+      this.metrics.speedKmh = data.instantaneous_speed
     }
-    // Total Distance (meters) — typically 24-bit unsigned when present
-    let totalM = null;
-    if (flags & 0x0010) {
-      const b0 = dv.getUint8(off);
-      const b1 = dv.getUint8(off + 1);
-      const b2 = dv.getUint8(off + 2);
-      off += 3;
-      totalM = (b0 | (b1 << 8) | (b2 << 16));
-    }
-    if (totalM != null) {
-      // Prefer distance delta from sensor over integrating speed
+    if (data.total_distance != null) {
+      this.metrics.distanceM = data.total_distance;
       this.usesDistanceFromSensor = true;
-      const tNow = performance.now();
-      if (this._ftmsBaseM == null) this._ftmsBaseM = totalM;
-      if (this._ftmsPrevM == null) this._ftmsPrevM = totalM;
-      if (this._ftmsPrevT == null) this._ftmsPrevT = tNow;
-      let dM = totalM - this._ftmsPrevM;
-      if (dM < 0) {
-        // Handle counter reset/wrap — reset baseline
-        this._ftmsBaseM = totalM;
-        dM = 0;
-      }
-      const dt = Math.max(0.001, (tNow - this._ftmsPrevT) / 1000);
-      const mps = dM / dt;
-      this.metrics.addDistance(dM, mps);
-      this._ftmsPrevM = totalM;
-      this._ftmsPrevT = tNow;
     } else {
-      // Fall back to speed-based integration if no total distance provided
       this.usesDistanceFromSensor = false;
-      if (speedMpsFromKmh != null) this.metrics.speedMps = speedMpsFromKmh;
-      this.metrics.integrate();
     }
     this._emit();
+  }
+  
+  _parseIndoorBikeData(dataView) {
+    //SPEC: https://btprodspecificationrefs.blob.core.windows.net/gatt-specification-supplement/GATT_Specification_Supplement.pdf
+    let flags = dataView.getUint16(0, true);
+    let index = 2;
+    let result = {};
+    if (flags & (1 << 0)) { // More Data; there is an additinal data record
+        // not supported yet
+    } else { // instead, instantaneous_speed present 
+        result.instantaneous_speed = dataView.getUint16(index, true) * 0.01;  // Unit: m/s
+    }
+    index += 2;
+    if (flags & (1 << 1)) {
+        result.average_speed = dataView.getUint16(index, true) * 0.01;  // Unit: m/s
+        index += 2;
+    }
+    if (flags & (1 << 2)) {
+        result.instantaneous_cadence = dataView.getUint16(index, true) * 0.5;  // Unit: RPM
+        index += 2;
+    }
+    if (flags & (1 << 3)) {
+        result.average_cadence = dataView.getUint16(index, true) * 0.5;  // Unit: RPM
+        index += 2;
+    }
+    if (flags & (1 << 4)) {
+        result.total_distance = 
+            dataView.getUint8(index) | 
+            (dataView.getUint8(index + 1) << 8) | 
+            (dataView.getUint8(index + 2) << 16);  // Unit: meter
+        index += 3;
+    }
+    if (flags & (1 << 5)) {
+        result.resistance_level = dataView.getUint8(index, true);
+        index += 1;
+    }
+    if (flags & (1 << 6)) {
+        result.instantaneous_power = dataView.getUint16(index, true);  // Unit: Watt
+        index += 2;
+    }
+    if (flags & (1 << 7)) {
+        result.average_power = dataView.getUint16(index, true);  // Unit: Watt
+        index += 2;
+    }
+    if (flags & (1 << 8)) {
+        result.total_energy = dataView.getUint16(index, true);  // Unit: kCal
+        result.energy_per_hour = dataView.getUint16(index+2, true);  // Unit: kCal
+        result.energy_per_minute = dataView.getUint8(index+4, true);  // Unit: kCal
+        index += 5;
+    }
+    if (flags & (1 << 9)) {
+        result.heart_rate = dataView.getUint8(index);  // Unit: BPM
+        index += 1;
+    }
+    if (flags & (1 << 10)) {
+        result.metabolic_equivalent = dataView.getUint8(index) * 0.1;  // Unit: METs
+        index += 1;
+    }
+    if (flags & (1 << 11)) {
+        result.elapsed_time = dataView.getUint16(index, true);  // Unit: sec
+        index += 2;
+    }
+    if (flags & (1 << 12)) {
+        result.remaining_time = dataView.getUint16(index, true);  // Unit: sec
+        index += 2;
+    }
+    return result;
   }
 }
 
@@ -223,7 +252,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const last = await fetchStatus(ident.userId);
   const pano = initPano(last);
   if (!pano) return;
-
+  
   const ui = {
     deviceName: qs('deviceName'),
     serviceName: qs('serviceName'),
@@ -243,35 +272,46 @@ window.addEventListener("DOMContentLoaded", async () => {
     turnLeftBtn: qs('turnLeftBtn'),
     turnRightBtn: qs('turnRightBtn'),
   };
-
+  
   const walker = new BLEWalker((metrics, ble) => {
-    ui.speed.textContent = metrics.speedMps.toFixed(2);
-    ui.cadence.textContent = Math.round(metrics.cadenceSpm);
-    ui.distance.textContent = metrics.distanceM.toFixed(1);
+    ui.speed.textContent = metrics.speedKmh.toFixed(1);
+    ui.cadence.textContent = Math.round(metrics.cadenceRpm);
+    ui.distance.textContent = metrics.distanceM.toFixed(0);
     ui.deviceName.textContent = ble.device?.name || 'Unknown';
     ui.serviceName.textContent = ble.activeService || '—';
   });
-
+  
   let advanceAccumulator = 0; // meters accumulated since last move
   let lastAccumDistance = 0;
+  // Rate limiting to avoid resource exhaustion from rapid pano changes
+  const ADVANCE_MIN_INTERVAL_MS = 500; // at most ~2 moves/sec
+  const MAX_ACCUMULATED_MOVES = 10; // cap backlog to avoid runaway
+  let lastAdvanceAt = 0;
   // Simple beep using Web Audio for turn alerts
+  let audioCtx = null;
+  let lastBeepAt = 0;
   function beep(durationMs = 200, freq = 880) {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
+      const now = performance.now();
+      if (now - lastBeepAt < 250) return; // throttle beeps
+      lastBeepAt = now;
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
       o.type = 'sine';
       o.frequency.value = freq;
       o.connect(g);
-      g.connect(ctx.destination);
-      g.gain.setValueAtTime(0.0001, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + durationMs / 1000);
+      g.connect(audioCtx.destination);
+      const t0 = audioCtx.currentTime;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.2, t0 + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + durationMs / 1000);
       o.start();
-      o.stop(ctx.currentTime + durationMs / 1000 + 0.02);
+      o.stop(t0 + durationMs / 1000 + 0.02);
     } catch {}
   }
-
+  
   function advance() {
     const link = chooseForwardLink(pano);
     if (!link) return;
@@ -290,7 +330,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       pano.setPov({ ...pov, heading: link.heading || pov.heading });
     }
   }
-
+  
   function loop() {
     const metersPerMove = Math.max(1, Number(ui.metersPerMove.value) || 8);
     const mock = Number(ui.mockSpeed.value) || 0;
@@ -304,10 +344,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     const dM = Math.max(0, curr - lastAccumDistance);
     lastAccumDistance = curr;
     advanceAccumulator += dM;
+    // Clamp backlog to avoid many immediate pano loads
+    advanceAccumulator = Math.min(advanceAccumulator, metersPerMove * MAX_ACCUMULATED_MOVES);
     if (ui.autoAdvance.value === 'on') {
-      while (advanceAccumulator >= metersPerMove) {
+      const now = performance.now();
+      if (advanceAccumulator >= metersPerMove && (now - lastAdvanceAt) >= ADVANCE_MIN_INTERVAL_MS) {
         advance();
         advanceAccumulator -= metersPerMove;
+        lastAdvanceAt = now;
       }
     }
 
@@ -315,7 +359,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
-
+  
   // BLE controls
   ui.connectBtn.addEventListener('click', async () => {
     try {
@@ -328,17 +372,17 @@ window.addEventListener("DOMContentLoaded", async () => {
   ui.disconnectBtn.addEventListener('click', async () => {
     await walker.disconnect();
   });
-
+  
   // Navigation controls
   ui.advanceBtn.addEventListener('click', advance);
   ui.turnLeftBtn.addEventListener('click', () => rotate(-22.5));
   ui.turnRightBtn.addEventListener('click', () => rotate(22.5));
-
+  
   function rotate(delta) {
     const pov = pano.getPov();
     pano.setPov({ ...pov, heading: (pov.heading + delta + 360) % 360 });
   }
-
+  
   // Start location controls
   ui.goBtn.addEventListener('click', () => {
     const lat = parseFloat(ui.lat.value);
@@ -347,7 +391,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       pano.setPosition({ lat, lng });
     }
   });
-
+  
   // Keyboard shortcuts
   window.addEventListener('keydown', (e) => {
     if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
@@ -358,7 +402,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       ui.autoAdvance.value = ui.autoAdvance.value === 'on' ? 'off' : 'on';
     }
   });
-
+  
   // Persist position and simple history on movement
   let lastSaved = null;
   pano.addListener("position_changed", () => {

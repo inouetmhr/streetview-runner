@@ -1,8 +1,3 @@
-function acceptsHtml(request) {
-  const accept = request.headers.get("accept") || "";
-  return accept.includes("text/html") || accept.includes("*/*");
-}
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -47,7 +42,7 @@ export default {
   <body>
     <h1>Cloudflare Worker App</h1>
     <p>Static assets not found, showing fallback page.</p>
-    <p>Try the leaderboard at <code>/api/leaderboard</code>.</p>
+    <p>Available APIs: <code>/api/status?userId=YOUR_ID</code>, <code>/api/history?userId=YOUR_ID</code>.</p>
   </body>
 </html>`,
       { headers: { "content-type": "text/html; charset=utf-8" } }
@@ -58,12 +53,6 @@ export default {
 function shouldInjectHtml(res) {
   const ct = (res.headers.get("content-type") || "").toLowerCase();
   return ct.includes("text/html");
-}
-
-function withContentType(headers, value) {
-  const h = new Headers(headers);
-  h.set("content-type", value);
-  return h;
 }
 
 async function injectWithRewriter(res, env) {
@@ -121,34 +110,7 @@ function json(obj, status = 200, headers = {}) {
   });
 }
 
-const LEADERBOARD_KEY = "leaderboard:v1";
-const MAX_ENTRIES = 100; // keep top 100
-
-async function getLeaderboard(env, limit = 25) {
-  if (!env.KV) return [];
-  const raw = await env.KV.get(LEADERBOARD_KEY, { type: "json" });
-  const items = Array.isArray(raw) ? raw : [];
-  return items.slice(0, limit);
-}
-
-async function submitScore(env, entry) {
-  if (!env.KV) return entry;
-  const now = Date.now();
-  const newEntry = { name: sanitizeName(entry.name), score: Number(entry.score), ts: now };
-  const raw = await env.KV.get(LEADERBOARD_KEY, { type: "json" });
-  const items = Array.isArray(raw) ? raw : [];
-  items.push(newEntry);
-  // Sort descending by score, then ascending by timestamp (earlier first)
-  items.sort((a, b) => (b.score - a.score) || (a.ts - b.ts));
-  const trimmed = items.slice(0, MAX_ENTRIES);
-  await env.KV.put(LEADERBOARD_KEY, JSON.stringify(trimmed), { expirationTtl: 60 * 60 * 24 * 365 });
-  return newEntry;
-}
-
-function sanitizeName(name) {
-  // remove control chars and collapse whitespace
-  return name.replace(/[\u0000-\u001F\u007F]/g, "").replace(/\s+/g, " ").trim() || "Player";
-}
+// (removed unused leaderboard helpers)
 
 // ----- Status/History API (Firestore/IndexedDB replacement) -----
 

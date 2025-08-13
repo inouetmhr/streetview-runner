@@ -18,11 +18,11 @@
 - JavaScript (ES Modules, `"type":"module"`). Use 2-space indent, double quotes, and semicolons.
 - Filenames: lower-case with dashes or simple names (e.g., `index.js`, `app.js`).
 - Functions/vars: `camelCase`; constants: `UPPER_SNAKE_CASE`.
-- Routes live in `fetch` within `src/index.js` (e.g., `/api/leaderboard`, `/api/score`). Keep handlers small and pure where possible.
+- Routes live in `fetch` within `src/index.js` (e.g., `/api/status`, `/api/history`). Keep handlers small and pure where possible.
 
 ## Testing Guidelines
 - No test harness is configured yet. If adding tests, prefer `vitest` and place files as `src/**/*.test.js` or `src/__tests__/*`. Keep API handlers factored for unit testing.
-- Manual checks: run `npm run dev` and exercise endpoints: `GET /api/leaderboard`, `POST /api/score`.
+- Manual checks: run `npm run dev` and exercise endpoints: `GET /api/status?userId=...`, `GET/POST /api/history`.
 
 ## Commit & Pull Requests
 - Commits: concise, imperative, scope in parentheses when helpful.
@@ -33,4 +33,4 @@
 ## Security & Configuration
 - API key injection: HTMLRewriter replaces `__GOOGLE_MAPS_API_KEY__` in `public/index.html` at runtime.
 - Do not commit secrets. Use Wrangler secrets for production and `.dev.vars` for local only.
-- Validate and sanitize user input server-side (`submitScore`, `sanitizeName`).
+- Validate and sanitize user input server-side in API handlers (`/api/status`, `/api/history`).
