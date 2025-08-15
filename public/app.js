@@ -13,7 +13,8 @@ class Metrics {
     const now = performance.now();
     const dt = Math.max(0, (now - this.lastUpdate) / 1000);
     this.lastUpdate = now;
-    const v = (this.speedKmh / 3.6) || mockSpeedMps || 0;
+    // Fallback integrates mock speed only (ignore BLE instantaneous speed)
+    const v = mockSpeedMps || 0;
     this.distanceM += v * dt;
   }
   addDistance(deltaM, speedHintMps = null) {
@@ -105,11 +106,11 @@ class BLEWalker {
     if (flags & (1 << 0)) { // More Data; there is an additinal data record
         // not supported yet
     } else { // instead, instantaneous_speed present 
-        result.instantaneous_speed = dataView.getUint16(index, true) * 0.01;  // Unit: m/s
+        result.instantaneous_speed = dataView.getUint16(index, true) * 0.01;  // Unit: km/h
     }
     index += 2;
     if (flags & (1 << 1)) {
-        result.average_speed = dataView.getUint16(index, true) * 0.01;  // Unit: m/s
+        result.average_speed = dataView.getUint16(index, true) * 0.01;  // Unit: km/h
         index += 2;
     }
     if (flags & (1 << 2)) {
@@ -218,7 +219,7 @@ function initPano(start) {
     position: pos,
     pov: { heading: start?.heading ?? 165, pitch: 0 },
     zoom: 1,
-    addressControl: false,
+    addressControl: true,
     motionTracking: false,
     fullscreenControl: false,
     linksControl: true,
@@ -273,12 +274,43 @@ window.addEventListener("DOMContentLoaded", async () => {
     turnRightBtn: qs('turnRightBtn'),
   };
   
-  const walker = new BLEWalker((metrics, ble) => {
-    ui.speed.textContent = metrics.speedKmh.toFixed(1);
+  let turnAlertUntil = 0;
+  function renderMetrics(metrics, ble) {
+    const now = performance.now();
+    if (now < turnAlertUntil) {
+      ui.speed.textContent = 'Turn!';
+    } else {
+      ui.speed.textContent = metrics.speedKmh.toFixed(1);
+    }
     ui.cadence.textContent = Math.round(metrics.cadenceRpm);
     ui.distance.textContent = metrics.distanceM.toFixed(0);
-    ui.deviceName.textContent = ble.device?.name || 'Unknown';
-    ui.serviceName.textContent = ble.activeService || '—';
+    if (ble) {
+      ui.deviceName.textContent = ble.device?.name || 'Unknown';
+      ui.serviceName.textContent = ble.activeService || '—';
+    }
+  }
+
+  const uiHeader = {
+    hdrSpeed: qs('hdrSpeed'),
+    hdrDayKm: qs('hdrDayKm'),
+    connectBtn: qs('connectBtn'),
+    togglePane: qs('togglePane'),
+  };
+
+  function setConnectedUI(isConnected) {
+    uiHeader.connectBtn.style.display = isConnected ? 'none' : '';
+  }
+
+  const walker = new BLEWalker((metrics, ble) => {
+    renderMetrics(metrics, ble);
+    // Update header speed (supports Turn! overlay via renderMetrics state)
+    const now = performance.now();
+    if (now < turnAlertUntil) {
+      uiHeader.hdrSpeed.textContent = 'Turn!';
+    } else {
+      uiHeader.hdrSpeed.textContent = metrics.speedKmh.toFixed(1);
+    }
+    setConnectedUI(Boolean(ble && ble.activeService));
   });
   
   let advanceAccumulator = 0; // meters accumulated since last move
@@ -319,8 +351,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     const turnAngle = Math.abs(angleDelta(pov.heading || 0, link.heading || 0));
     // If a large turn is needed, alert and skip advancing for now
     if (turnAngle > 80) {
-      ui.status.textContent = 'Turn!';
+      turnAlertUntil = performance.now() + 1000; // show for 1s
+      renderMetrics(walker.metrics, walker);
       beep(180, 880);
+      // Reflect alert in header too
+      uiHeader.hdrSpeed.textContent = 'Turn!';
       return;
     }
     // Move forward
@@ -365,13 +400,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     try {
       ui.status.textContent = 'Connecting…';
       await walker.connect();
+      setConnectedUI(Boolean(walker.activeService));
     } catch (e) {
       ui.status.textContent = String(e.message || e);
     }
   });
-  ui.disconnectBtn.addEventListener('click', async () => {
-    await walker.disconnect();
-  });
+  // No explicit disconnect button; user can disconnect from OS/BLE UI
   
   // Navigation controls
   ui.advanceBtn.addEventListener('click', advance);
@@ -405,6 +439,24 @@ window.addEventListener("DOMContentLoaded", async () => {
   
   // Persist position and simple history on movement
   let lastSaved = null;
+  // Daily distance tracker (km shown in header)
+  let dailyDistanceM = 0;
+  let lastHistoryPoint = null;
+
+  // Load today's history and compute initial daily distance
+  const todayStr = new Date().toISOString().slice(0,10);
+  try {
+    const hist = await fetch(`/api/history?userId=${encodeURIComponent(ident.userId)}&day=${todayStr}`);
+    if (hist.ok) {
+      const data = await hist.json();
+      const items = Array.isArray(data.items) ? data.items : [];
+      for (let i = 1; i < items.length; i++) {
+        dailyDistanceM += distMeters(items[i-1], items[i]);
+      }
+      lastHistoryPoint = items[items.length - 1] || null;
+    }
+  } catch {}
+  uiHeader.hdrDayKm.textContent = (dailyDistanceM/1000).toFixed(1);
   pano.addListener("position_changed", () => {
     const loc = pano.getLocation();
     if (!loc || !loc.latLng) return;
@@ -419,8 +471,47 @@ window.addEventListener("DOMContentLoaded", async () => {
       lastSaved = { lat, lng, t: now };
       saveStatus(ident.userId, { lat, lng, heading });
       appendHistory(ident.userId, { lat, lng, heading, ts: Date.now() });
+      // Update daily distance incrementally
+      if (lastHistoryPoint) {
+        dailyDistanceM += distMeters(lastHistoryPoint, { lat, lng });
+      }
+      lastHistoryPoint = { lat, lng };
+      uiHeader.hdrDayKm.textContent = (dailyDistanceM/1000).toFixed(1);
     }
   });
+
+  // Side pane collapse toggle
+  uiHeader.togglePane.addEventListener('click', () => {
+    const collapsed = document.body.classList.toggle('side-collapsed');
+  });
+
+  // Mini map setup
+  try {
+    const miniEl = qs('miniMap');
+    if (miniEl && window.google && google.maps) {
+      const initialPos = pano.getPosition() || (pano.getLocation && pano.getLocation()?.latLng) || new google.maps.LatLng(37.769263, -122.450727);
+      const m = new google.maps.Map(miniEl, {
+        center: initialPos,
+        zoom: 16,
+        disableDefaultUI: true,
+        clickableIcons: false,
+        mapId: undefined,
+      });
+      let marker = null;
+      if (google.maps.Marker) {
+        marker = new google.maps.Marker({ map: m, position: initialPos });
+      }
+      pano.addListener('position_changed', () => {
+        const pos = pano.getPosition() || (pano.getLocation && pano.getLocation()?.latLng);
+        if (pos) {
+          m.setCenter(pos);
+          if (marker) marker.setPosition(pos);
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('Mini map init failed:', e);
+  }
 });
 
 // Haversine distance
