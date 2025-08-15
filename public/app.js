@@ -239,9 +239,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     cadence: qs('cadence'),
     distance: qs('distance'),
     connectBtn: qs('connectBtn'),          // header connect
-    advanceBtn: qs('advanceBtn'),
-    turnLeftBtn: qs('turnLeftBtn'),
-    turnRightBtn: qs('turnRightBtn'),
   };
   
   // Turn alert state: show toast + 'Turn!' while blocked
@@ -280,20 +277,19 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   const walker = new BLEWalker();
   walker.onBikeData = () => {
-    console.log("onBikeData");
     const metrics = walker.metrics;
     const ble = walker;
     const total = metrics.distanceM || 0;
     if (prevSensorDistance == null) {
       prevSensorDistance = total;
-    } else {
+    }
+    const delta = total - prevSensorDistance;
+    if (delta > 0) {
       let dM = total - prevSensorDistance;
       if (!Number.isFinite(dM) || dM < 0) dM = 0;
-      prevSensorDistance = total;
       bikeMoved(dM);
+      renderMetrics(metrics, ble);
     }
-    renderMetrics(metrics, ble);
-    uiHeader.hdrSpeed.textContent = turnBlocked ? 'Turn!' : metrics.speedKmh.toFixed(1);
     setConnectedUI(Boolean(ble && ble.activeService));
   };
   // Simple beep using Web Audio for turn alerts
@@ -328,13 +324,22 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   function advance() {
-    console.log('Advancing...');
     const link = chooseForwardLink(pano);
     if (!link) return;
     const pov = pano.getPov();
     const turnAngle = Math.abs(angleDelta(pov.heading || 0, link.heading || 0));
-    // Safety: if a large turn is needed, skip advancing (alert handled by loop)
-    if (turnAngle > 80) return;
+
+    // If a large turn is needed, block advancement and alert the user
+    if (turnAngle > 80) {
+      if (!turnBlocked) { beep(180, 880); showTurnToast(true); }
+      turnBlocked = true;
+      return;
+    }
+
+    // Clear any previous turn block UI
+    if (turnBlocked) { showTurnToast(false); }
+    turnBlocked = false;
+
     // Move forward
     pano.setPano(link.pano);
     // If the turn is significant, align the view to the link heading
@@ -390,26 +395,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (ui.connectBtn) ui.connectBtn.addEventListener('click', doConnect);
   // No explicit disconnect button per spec; disconnect via OS/BLE UI
   
-  // Navigation controls
-  ui.advanceBtn.addEventListener('click', advance);
-  ui.turnLeftBtn.addEventListener('click', () => rotate(-22.5));
-  ui.turnRightBtn.addEventListener('click', () => rotate(22.5));
-  
-  function rotate(delta) {
-    const pov = pano.getPov();
-    pano.setPov({ ...pov, heading: (pov.heading + delta + 360) % 360 });
-  }
+  // Navigation UI removed (no buttons/controls per spec)
   
   // No explicit start location inputs per spec
   
-  // Keyboard shortcuts
-  window.addEventListener('keydown', (e) => {
-    if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
-    if (e.key === ' ') { e.preventDefault(); advance(); }
-    if (e.key === 'ArrowLeft') rotate(-22.5);
-    if (e.key === 'ArrowRight') rotate(22.5);
-    // No 'A' auto-advance toggle per spec
-  });
+  // Keyboard shortcuts removed (no keyboard control per spec)
   
   // Persist position and simple history on movement
   let lastSaved = null;

@@ -62,11 +62,15 @@
 ## Behavior
 - On BLE `characteristicvaluechanged` event, parsing each event
   - update metrics and UI
-  - advance (in pano) when total_distance increased
+  - advance (in pano) when total_distance delta from previous one > 0 
     - If required turn angle >80°: 
        - Don't advance and notify the user to choose direction.
-       - if Audio: beep. reuse a single AudioContext; throttle beeps to ≥250 ms apart.
+       - if Audio: beep. throttle beeps to ≥250 ms apart.
+    - measure
+- On Maps `position_changed` event
   - persist location every ≥10 m.
+- On Maps `links_changed` envet
+  - further advance if there still are distance to go
 
 ## Security
 - Validate `userId`, `lat`, `lng`, and numeric types server‑side.
@@ -74,7 +78,7 @@
 - Web Bluetooth requires HTTPS/localhost secure context; no cross‑origin BLE access.
 
 ## Performance
-- Browser budget: ≤2 pano moves/sec, single AudioContext, minimal allocations per notification.
+- Browser budget: single AudioContext, minimal allocations per notification.
 - Worker: KV interactions are small JSON payloads; cap history size; avoid large responses.
 
 ## Telemetry / Logging
