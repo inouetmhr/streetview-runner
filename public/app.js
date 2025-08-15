@@ -195,7 +195,7 @@ function initMap(start) {
     return null;
   }
   const el = qs("pano");
-  const pos = start?.lat && start?.lng ? { lat: start.lat, lng: start.lng } : { lat: 37.769263, lng: -122.450727 };
+  const pos = (start?.lat && start?.lng) ? start : defaultLocation;
   const pano = new google.maps.StreetViewPanorama(el, {
     position: pos,
     pov: { heading: start?.heading ?? 165, pitch: 0 },
@@ -244,7 +244,8 @@ function angleDelta(a, b) {
 window.addEventListener("DOMContentLoaded", async () => {
   const ident = getIdentity();
   const last = await fetchStatus(ident.userId);
-  const [map, pano] = initMap(last);
+  const defaultLocation = {lat:35.681296, lng:139.758922, heading: 190}; // Otemachi, Tokyo
+  const [map, pano] = initMap(last || defaultLocation);
   if (!map) return;
 
   const glyphImg = document.createElement("img");
@@ -257,6 +258,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     lastHistoryPoint: null,
     lastSaved: null,
     turnBlocked: false,
+    // For header speed measurement
+    prevTimeMs: Date.now(),
+    distSincePrevTimeM: 0,
   };
 
   const ui = {
@@ -305,7 +309,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const delta = total - walker.sensors.prevDistance;
     walker.sensors.prevDistance = total;
     if (Number.isFinite(delta) && delta > 0) {
-      onSensorDistanceDelta(delta);
+      onSensorDistanceDelta(delta * 0.9); // scale by 0.9 because sensor is too fast.
       renderMetrics(walker.sensors, walker);
     }
   };
@@ -337,7 +341,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   const turnToast = qs('turnToast');
   function showTurnToast(show) {
     if (!turnToast) return;
-    turnToast.style.display = show ? '' : 'none';
+    const next = show ? 'block' : 'none';
+    if (turnToast.style.display === next) return; // no-op if unchanged
+    turnToast.style.display = next;
   }
 
   function advance() {
@@ -389,7 +395,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     const pov = pano.getPov();
     const turnAngle = link ? Math.abs(angleDelta(pov.heading || 0, link.heading || 0)) : 0;
     session.turnBlocked = link ? (turnAngle > 80) : false;
-    if (session.turnBlocked) { beep(180, 880); showTurnToast(true); }
+    // Show when blocked; hide when unblocked
+    showTurnToast(session.turnBlocked);
+    if (session.turnBlocked) { beep(180, 880); }
     if (rest_togo > 0 && !session.turnBlocked) {
       advance();
     }
@@ -408,13 +416,27 @@ window.addEventListener("DOMContentLoaded", async () => {
         session.distance_togo -= moved;
       }
     }
+    console.log("position_changed. moved:", moved.toFixed(1));
+    if (moved < 0) return;
     if (moved > 20) { // reset when large changes caused by manual/pegman move on mini map.
       session.distance_togo = 0;
+      session.prevPosition = currentPos;
       return; 
     }
     // Update daily distance incrementally
     session.dailyDistanceM += moved;
     ui.hdrDayKm.textContent = (session.dailyDistanceM / 1000).toFixed(2);
+    // Update header speed using distance/time window
+    session.distSincePrevTimeM += moved;
+    const now = Date.now();
+    const diffSec = (now - (session.prevTimeMs || now)) / 1000;
+    if (diffSec > 10) { // update every >10 sec
+      const speedKmh = (session.distSincePrevTimeM / diffSec) * 3.6;
+      ui.hdrSpeed.textContent = (Number.isFinite(speedKmh) ? speedKmh : 0).toFixed(1);
+      session.prevTimeMs = now;
+      session.distSincePrevTimeM = 0;
+    }
+
     putMarker(session.prevPosition);
     session.prevPosition = currentPos;
     // Persist only after moving ≥10 m per spec (no time fallback)
@@ -456,9 +478,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   } catch {}
   ui.hdrDayKm.textContent = (session.dailyDistanceM/1000).toFixed(2);
-  // Side pane collapse toggle
+  // Side pane toggle: hidden by default; show with side-open on all screens
   ui.togglePane.addEventListener('click', () => {
-    const collapsed = document.body.classList.toggle('side-collapsed');
+    document.body.classList.toggle('side-open');
   });
 
   function putMarker(location) {
