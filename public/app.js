@@ -261,6 +261,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     // For header speed measurement
     prevTimeMs: Date.now(),
     distSincePrevTimeM: 0,
+    dayStr: new Date().toISOString().slice(0,10),
   };
 
   const ui = {
@@ -423,9 +424,18 @@ window.addEventListener("DOMContentLoaded", async () => {
       session.prevPosition = currentPos;
       return; 
     }
-    // Update daily distance incrementally
-    session.dailyDistanceM += moved;
-    ui.hdrDayKm.textContent = (session.dailyDistanceM / 1000).toFixed(2);
+    // Daily distance: persist locally by day
+    const currentDay = dayString();
+    if (currentDay !== session.dayStr) {
+      // Day rolled over: switch accumulator to today's stored value
+      session.dayStr = currentDay;
+      session.dailyDistanceM = loadDailyDistanceFor(session.dayStr);
+    }
+    if (Number.isFinite(moved) && moved >= 0) {
+      session.dailyDistanceM += moved;
+      saveDailyDistanceFor(session.dayStr, session.dailyDistanceM);
+      ui.hdrDayKm.textContent = (session.dailyDistanceM / 1000).toFixed(2);
+    }
     // Update header speed using distance/time window
     session.distSincePrevTimeM += moved;
     const now = Date.now();
@@ -460,24 +470,44 @@ window.addEventListener("DOMContentLoaded", async () => {
   };
   if (ui.connectBtn) ui.connectBtn.addEventListener('click', doConnect);
   // No explicit disconnect button per spec; disconnect via OS/BLE UI
-  
-  // Persist position and simple history on movement
-  // ...session object now holds these variables...
 
-  // Load today's history and compute initial daily distance
-  const todayStr = new Date().toISOString().slice(0,10);
-  try {
-    const hist = await fetch(`/api/history?userId=${encodeURIComponent(ident.userId)}&day=${todayStr}`);
-    if (hist.ok) {
-      const data = await hist.json();
-      const items = Array.isArray(data.items) ? data.items : [];
-      for (let i = 1; i < items.length; i++) {
-        session.dailyDistanceM += distMeters(items[i-1], items[i]);
-      }
-      lastHistoryPoint = items[items.length - 1] || null;
-    }
-  } catch {}
+  // Daily distance persistence (localStorage)
+  const dayString = () => new Date().toISOString().slice(0,10);
+  const ddKey = (dStr) => `dailyDistance:${ident.userId}:${dStr}`;
+  const loadDailyDistanceFor = (dStr) => {
+    const v = parseFloat(localStorage.getItem(ddKey(dStr)) ?? '');
+    return Number.isFinite(v) ? v : 0;
+  };
+  const saveDailyDistanceFor = (dStr, val) => {
+    try { localStorage.setItem(ddKey(dStr), String(val)); } catch {}
+  };
+  // Initialize today's distance from localStorage
+  session.dailyDistanceM = loadDailyDistanceFor(session.dayStr);
   ui.hdrDayKm.textContent = (session.dailyDistanceM/1000).toFixed(2);
+
+  // Load today's history and draw markers on mini map (no distance calc)
+  async function loadHistoryAndMarkers() {
+    const todayStr = session.dayStr;
+    try {
+      const res = await fetch(`/api/history?userId=${encodeURIComponent(ident.userId)}&day=${todayStr}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const items = Array.isArray(data.items) ? data.items : [];
+      // Draw markers only
+      for (let i = 0; i < items.length; i++) {
+        const p = items[i];
+        if (p && Number.isFinite(p.lat) && Number.isFinite(p.lng)) {
+          putMarker({ lat: p.lat, lng: p.lng });
+        }
+      }
+      // Set prev position to last point for subsequent movement tracking
+      const last = items[items.length - 1];
+      if (last && Number.isFinite(last.lat) && Number.isFinite(last.lng)) {
+        session.prevPosition = { lat: last.lat, lng: last.lng };
+      }
+    } catch {}
+  }
+  await loadHistoryAndMarkers();
   // Side pane toggle: hidden by default; show with side-open on all screens
   ui.togglePane.addEventListener('click', () => {
     document.body.classList.toggle('side-open');
@@ -485,11 +515,15 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   function putMarker(location) {
       try {
-          const marker = new google.maps.marker.AdvancedMarkerElement({
+          if (google.maps.marker && google.maps.marker.AdvancedMarkerElement) {
+            new google.maps.marker.AdvancedMarkerElement({
               position: location,
               map: map,
               content: glyphImg.cloneNode(true)
-          });
+            });
+          } else {
+            new google.maps.Marker({ position: location, map });
+          }
       }
       catch  (error) {
           console.error("Error in putting marker:", error);

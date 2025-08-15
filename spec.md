@@ -60,17 +60,20 @@
 - Constraints: trim history arrays to 500 items; no TTL required by default.
 
 ## Behavior
-- On BLE `characteristicvaluechanged` event, parsing each event
+- On startup
+  - load daily distance
+  - load today's history and put marker on mini map.
+- On BLE `characteristicvaluechanged` event, parsing each event, and when total_distance delta from previous one > 0 
   - update metrics and UI
-  - advance (in pano) when total_distance delta from previous one > 0 
+  - advance (in pano), that will triger `links_changed` envet followed by `position_changed` event.
     - If required turn angle >80°: 
        - Don't advance and notify the user to choose direction.
        - if Audio: beep. throttle beeps to ≥250 ms apart.
     - measure
-- On Maps `position_changed` event
-  - persist location every ≥10 m.
 - On Maps `links_changed` envet
   - further advance if there still are distance to go
+- On Maps `position_changed` event
+  - persist location every ≥10 m.
 
 ## Security
 - Validate `userId`, `lat`, `lng`, and numeric types server‑side.
