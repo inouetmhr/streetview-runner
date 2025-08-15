@@ -1,4 +1,4 @@
-/* Street View Walkthrough + Web Bluetooth (FTMS only) */
+/* Street View Runner + Web Bluetooth (FTMS) */
 
 function qs(id) { return document.getElementById(id); }
 
@@ -6,8 +6,8 @@ class Metrics {
   constructor() {
     this.speedKmh = 0; // km/h
     this.cadenceRpm = 0; // rpm
-    this.distanceM = 0;
-    this.lastUpdate = performance.now();
+    this.distanceM = 0; // meters
+    this.prevDistance = null;
   }
 }
 
@@ -15,9 +15,10 @@ class BLEWalker {
   constructor() {
     this.device = null;
     this.server = null;
-    this.onBikeData = null; // () => void; consumer reads this.metrics/this
-    this.metrics = new Metrics();
+    this.onData = null; // () => void; consumer reads this.metrics/this
+    this.sensors = new Metrics();
     this._activeService = null; // 'FTMS' | null
+    this.onConnectionChange = null; // (isConnected:boolean) => void
   }
   get activeService() { return this._activeService; }
   async connect() {
@@ -32,6 +33,7 @@ class BLEWalker {
     // Only FTMS is supported
     if (await this._tryFTMS()) return;
     this._status('Connected (no FTMS service)');
+    try { this.onConnectionChange?.(false); } catch {}
   }
   async disconnect() {
     try { this.device?.gatt?.disconnect(); } catch {}
@@ -42,6 +44,7 @@ class BLEWalker {
     this.device = null;
     this.server = null;
     this._status('Disconnected');
+    try { this.onConnectionChange?.(false); } catch {}
   }
   _status(s) {
     qs('status').textContent = s;
@@ -54,24 +57,25 @@ class BLEWalker {
       ch.addEventListener('characteristicvaluechanged', (e) => {
         const dv = e.target.value;
         this._onFTMS(dv);
-        try { this.onBikeData?.(); } catch {}
+        try { this.onData?.(); } catch {}
       });
       await ch.startNotifications();
       this._activeService = 'FTMS';
       this._status('Connected (FTMS: Indoor Bike)');
+      try { this.onConnectionChange?.(true); } catch {}
       return true;
     } catch { return false; }
   }
   _onFTMS(dv) {
     const data = this._parseIndoorBikeData(dv);
     if (data.instantaneous_cadence) {
-      this.metrics.cadenceRpm = Math.round(data.instantaneous_cadence);
+      this.sensors.cadenceRpm = Math.round(data.instantaneous_cadence);
     }
     if (data.instantaneous_speed) {
-      this.metrics.speedKmh = data.instantaneous_speed
+      this.sensors.speedKmh = data.instantaneous_speed
     }
     if (data.total_distance != null) {
-      this.metrics.distanceM = data.total_distance;
+      this.sensors.distanceM = data.total_distance;
     }
   }
   
@@ -185,7 +189,7 @@ async function appendHistory(userId, point) {
   } catch {}
 }
 
-function initPano(start) {
+function initMap(start) {
   if (!window.google || !google.maps) {
     console.warn("Google Maps API not available. Set GOOGLE_MAPS_API_KEY.");
     return null;
@@ -202,8 +206,20 @@ function initPano(start) {
     linksControl: true,
     showRoadLabels: true,
   });
-  window.__pano = pano;
-  return pano;
+  const map = new google.maps.Map(qs('miniMap'), {
+        center: pano.getPosition() || pos,
+        zoom: 15,
+        zoomControl: true,
+        clickableIcons: false,
+        mapId: "fcf78f824472c3b8"
+  });
+  map.setStreetView(pano);
+  pano.addListener('position_changed', () => {
+    const pos = pano.getPosition() || (pano.getLocation && pano.getLocation()?.latLng);
+    if (pos) map.setCenter(pos);
+  });
+  //window.__pano = pano;
+  return [map, pano];
 }
 
 function chooseForwardLink(pano) {
@@ -228,69 +244,70 @@ function angleDelta(a, b) {
 window.addEventListener("DOMContentLoaded", async () => {
   const ident = getIdentity();
   const last = await fetchStatus(ident.userId);
-  const pano = initPano(last);
-  if (!pano) return;
-  
+  const [map, pano] = initMap(last);
+  if (!map) return;
+
+  const glyphImg = document.createElement("img");
+  glyphImg.src = "/circle_dot.png";
+
+  const session = {
+    dailyDistanceM: 0,
+    distance_togo: 0,
+    prevPosition: null,
+    lastHistoryPoint: null,
+    lastSaved: null,
+    turnBlocked: false,
+  };
+
   const ui = {
+    hdrSpeed: qs('hdrSpeed'),
+    hdrDayKm: qs('hdrDayKm'),
+    connectBtn: qs('connectBtn'),
+    togglePane: qs('togglePane'),
+  };
+  const deviceStatus = {
     deviceName: qs('deviceName'),
     serviceName: qs('serviceName'),
     status: qs('status'),
     speed: qs('speed'),
     cadence: qs('cadence'),
     distance: qs('distance'),
-    connectBtn: qs('connectBtn'),          // header connect
   };
-  
-  // Turn alert state: show toast + 'Turn!' while blocked
-  let turnBlocked = false;
-  let prevTurnBlocked = false;
+
   function renderMetrics(metrics, ble) {
-    if (turnBlocked) {
-      ui.speed.textContent = 'Turn!';
+    if (session.turnBlocked) {
+      deviceStatus.speed.textContent = 'Turn!';
     } else {
-      ui.speed.textContent = metrics.speedKmh.toFixed(1);
+      deviceStatus.speed.textContent = metrics.speedKmh.toFixed(1);
     }
-    ui.cadence.textContent = Math.round(metrics.cadenceRpm);
-    ui.distance.textContent = metrics.distanceM.toFixed(0);
+    deviceStatus.cadence.textContent = Math.round(metrics.cadenceRpm);
+    deviceStatus.distance.textContent = metrics.distanceM.toFixed(0);
     if (ble) {
-      ui.deviceName.textContent = ble.device?.name || 'Unknown';
-      ui.serviceName.textContent = ble.activeService || '—';
+      deviceStatus.deviceName.textContent = ble.device?.name || 'Unknown';
+      deviceStatus.serviceName.textContent = ble.activeService || '—';
     }
   }
 
-  const uiHeader = {
-    hdrSpeed: qs('hdrSpeed'),
-    hdrDayKm: qs('hdrDayKm'),
-    connectBtn: qs('connectBtn'),
-    togglePane: qs('togglePane'),
-  };
-
   function setConnectedUI(isConnected) {
-    uiHeader.connectBtn.style.display = isConnected ? 'none' : '';
+    ui.connectBtn.style.display = isConnected ? 'none' : '';
     if (ui.disconnectBtn) ui.disconnectBtn.style.display = isConnected ? '' : 'none';
   }
 
-  // Bring back backlog and chaining (fixed meters per move)
   const MAX_BACKLOG_M = 200; // cap backlog in meters to avoid runaway
-  let prevSensorDistance = null;
-  const session = { distance_togo: 0 };
 
   const walker = new BLEWalker();
-  walker.onBikeData = () => {
-    const metrics = walker.metrics;
-    const ble = walker;
-    const total = metrics.distanceM || 0;
-    if (prevSensorDistance == null) {
-      prevSensorDistance = total;
+  walker.onConnectionChange = (isConnected) => setConnectedUI(isConnected);
+  walker.onData = () => {
+    const total = walker.sensors.distanceM || 0;
+    if (walker.sensors.prevDistance == null) {
+      walker.sensors.prevDistance = total;
     }
-    const delta = total - prevSensorDistance;
-    if (delta > 0) {
-      let dM = total - prevSensorDistance;
-      if (!Number.isFinite(dM) || dM < 0) dM = 0;
-      bikeMoved(dM);
-      renderMetrics(metrics, ble);
+    const delta = total - walker.sensors.prevDistance;
+    walker.sensors.prevDistance = total;
+    if (Number.isFinite(delta) && delta > 0) {
+      onSensorDistanceDelta(delta);
+      renderMetrics(walker.sensors, walker);
     }
-    setConnectedUI(Boolean(ble && ble.activeService));
   };
   // Simple beep using Web Audio for turn alerts
   let audioCtx = null;
@@ -317,97 +334,113 @@ window.addEventListener("DOMContentLoaded", async () => {
     } catch {}
   }
   
-  const turnToast = document.getElementById('turnToast');
+  const turnToast = qs('turnToast');
   function showTurnToast(show) {
     if (!turnToast) return;
     turnToast.style.display = show ? '' : 'none';
   }
 
   function advance() {
+    //console.log("advancing...");
     const link = chooseForwardLink(pano);
     if (!link) return;
     const pov = pano.getPov();
     const turnAngle = Math.abs(angleDelta(pov.heading || 0, link.heading || 0));
-
     // If a large turn is needed, block advancement and alert the user
     if (turnAngle > 80) {
-      if (!turnBlocked) { beep(180, 880); showTurnToast(true); }
-      turnBlocked = true;
+      console.log("turn blocked. angle: " + turnAngle);
+      beep(180, 880);
+      showTurnToast(true);
+      session.turnBlocked = true;
       return;
     }
-
     // Clear any previous turn block UI
-    if (turnBlocked) { showTurnToast(false); }
-    turnBlocked = false;
-
-    // Move forward
+    if (session.turnBlocked) { showTurnToast(false); }
+    session.turnBlocked = false;
+    // Move forward, invoking link_changed event.
     pano.setPano(link.pano);
     // If the turn is significant, align the view to the link heading
     if (turnAngle > 45) {
-      pano.setPov({ ...pov, heading: link.heading || pov.heading });
+      pano.setPov({heading: link.heading || pov.heading, pitch: 0 });
     }
   }
+  window.advance = advance; // for debug
 
-  // Alias to match requested feature naming
-  function moveForward() { advance(); }
-
-  /* dbChanged を簡易化したBLE版。diff [meter] の分、前進する。
-     実際の前進は moveForward で、これがどれくらい進むかは Maps 次第なので結果的にしか分からない。
-     このため移動すべき残りの距離の分 moveFoward を繰り返してる。*/
-  function bikeMoved(diff){
-    console.log("bikeMoved: ", diff);
-    if (isNaN(diff) || diff <= 0.0)  return; // not supposed
-    session.distance_togo = Math.min((session.distance_togo || 0) + diff, MAX_BACKLOG_M);
+  /* Moves forward by the delta [meter].
+     The actual movement is performed by advance(), and how much progress is made depends on Maps,
+     so the result can only be inferred.
+     Therefore, advance() is repeatedly called for the remaining distance to travel. */
+  function onSensorDistanceDelta(delta){
+    console.log(`onSensorDistanceDelta: ${delta} meter`);
+    if (isNaN(delta) || delta <= 0.0)  return; // not supposed
+    session.distance_togo = Math.min((session.distance_togo || 0) + delta, MAX_BACKLOG_M);
     if (session.distance_togo > 0) {
-        moveForward();
+      advance();
     } else {
-        console.log("move skipped.");
+      console.log(`move skipped. backlog: ${session.distance_togo.toFixed(1)}`);
     }
   }
-  
-  // Chaining: drain backlog when new links are available
+
   pano.addListener("links_changed", () => {
-    const rest = session.distance_togo;
-    console.log(`links_changed. rest to go: ${rest.toFixed(1)}`);
+    const rest_togo = session.distance_togo;
+    console.log(`links_changed. rest to go: ${rest_togo.toFixed(1)}`);
     // Evaluate turn feasibility for the next step
     const link = chooseForwardLink(pano);
     const pov = pano.getPov();
     const turnAngle = link ? Math.abs(angleDelta(pov.heading || 0, link.heading || 0)) : 0;
-    turnBlocked = link ? (turnAngle > 80) : false;
-    if (turnBlocked && !prevTurnBlocked) { beep(180, 880); showTurnToast(true); }
-    if (!turnBlocked && prevTurnBlocked) { showTurnToast(false); }
-    prevTurnBlocked = turnBlocked;
-    if (rest > 0 && !turnBlocked) {
-      moveForward();
+    session.turnBlocked = link ? (turnAngle > 80) : false;
+    if (session.turnBlocked) { beep(180, 880); showTurnToast(true); }
+    if (rest_togo > 0 && !session.turnBlocked) {
+      advance();
     }
   });
-  
+
+  // Called after links_changed event.
+  pano.addListener("position_changed", () => {
+    const loc = pano.getLocation();
+    if (!loc || !loc.latLng) return;
+    const currentPos = { lat: loc.latLng.lat(), lng: loc.latLng.lng() };
+    // Subtract actual moved distance from backlog
+    let moved = 0;
+    if (session.prevPosition) {
+      moved = distMeters(session.prevPosition, currentPos);
+      if (Number.isFinite(moved) && moved > 0) {
+        session.distance_togo -= moved;
+      }
+    }
+    if (moved > 20) { // reset when large changes caused by manual/pegman move on mini map.
+      session.distance_togo = 0;
+      return; 
+    }
+    // Update daily distance incrementally
+    session.dailyDistanceM += moved;
+    ui.hdrDayKm.textContent = (session.dailyDistanceM / 1000).toFixed(2);
+    putMarker(session.prevPosition);
+    session.prevPosition = currentPos;
+    // Persist only after moving ≥10 m per spec (no time fallback)
+    const changed = !session.lastSaved || distMeters(session.lastSaved, currentPos) >= 10;
+    if (changed) { 
+      session.lastSaved = { ...currentPos, t: performance.now() };
+      const heading = pano.getPov()?.heading || 0;
+      saveStatus(ident.userId, { ...currentPos, heading });
+      appendHistory(ident.userId, { ...currentPos, heading, ts: Date.now() });
+    }
+  });
+
   // BLE controls
   const doConnect = async () => {
     try {
-      ui.status.textContent = 'Connecting…';
+      deviceStatus.status.textContent = 'Connecting…';
       await walker.connect();
-      setConnectedUI(Boolean(walker.activeService));
     } catch (e) {
-      ui.status.textContent = String(e.message || e);
+      deviceStatus.status.textContent = String(e.message || e);
     }
   };
   if (ui.connectBtn) ui.connectBtn.addEventListener('click', doConnect);
   // No explicit disconnect button per spec; disconnect via OS/BLE UI
   
-  // Navigation UI removed (no buttons/controls per spec)
-  
-  // No explicit start location inputs per spec
-  
-  // Keyboard shortcuts removed (no keyboard control per spec)
-  
   // Persist position and simple history on movement
-  let lastSaved = null;
-  // Daily distance tracker (km shown in header)
-  let dailyDistanceM = 0;
-  let lastHistoryPoint = null;
-  // Track last pano position for backlog subtraction
-  let lastPanoPosForBacklog = null;
+  // ...session object now holds these variables...
 
   // Load today's history and compute initial daily distance
   const todayStr = new Date().toISOString().slice(0,10);
@@ -417,72 +450,29 @@ window.addEventListener("DOMContentLoaded", async () => {
       const data = await hist.json();
       const items = Array.isArray(data.items) ? data.items : [];
       for (let i = 1; i < items.length; i++) {
-        dailyDistanceM += distMeters(items[i-1], items[i]);
+        session.dailyDistanceM += distMeters(items[i-1], items[i]);
       }
       lastHistoryPoint = items[items.length - 1] || null;
     }
   } catch {}
-  uiHeader.hdrDayKm.textContent = (dailyDistanceM/1000).toFixed(1);
-  pano.addListener("position_changed", () => {
-    const loc = pano.getLocation();
-    if (!loc || !loc.latLng) return;
-    const lat = loc.latLng.lat();
-    const lng = loc.latLng.lng();
-    // Subtract actual moved distance from backlog
-    if (lastPanoPosForBacklog) {
-      const moved = distMeters(lastPanoPosForBacklog, { lat, lng });
-      if (Number.isFinite(moved) && moved > 0) {
-        session.distance_togo = Math.max(0, session.distance_togo - moved);
-      }
-    }
-    lastPanoPosForBacklog = { lat, lng };
-    const heading = pano.getPov()?.heading || 0;
-    // Persist only after moving ≥10 m per spec (no time fallback)
-    const changed = !lastSaved || distMeters(lastSaved, { lat, lng }) >= 10;
-    if (changed) {
-      lastSaved = { lat, lng, t: performance.now() };
-      saveStatus(ident.userId, { lat, lng, heading });
-      appendHistory(ident.userId, { lat, lng, heading, ts: Date.now() });
-      // Update daily distance incrementally
-      if (lastHistoryPoint) {
-        dailyDistanceM += distMeters(lastHistoryPoint, { lat, lng });
-      }
-      lastHistoryPoint = { lat, lng };
-      uiHeader.hdrDayKm.textContent = (dailyDistanceM/1000).toFixed(1);
-    }
-  });
-
+  ui.hdrDayKm.textContent = (session.dailyDistanceM/1000).toFixed(2);
   // Side pane collapse toggle
-  uiHeader.togglePane.addEventListener('click', () => {
+  ui.togglePane.addEventListener('click', () => {
     const collapsed = document.body.classList.toggle('side-collapsed');
   });
 
-  // Mini map setup
-  try {
-    const miniEl = qs('miniMap');
-    if (miniEl && window.google && google.maps) {
-      const initialPos = pano.getPosition() || (pano.getLocation && pano.getLocation()?.latLng) || new google.maps.LatLng(37.769263, -122.450727);
-      const m = new google.maps.Map(miniEl, {
-        center: initialPos,
-        zoom: 16,
-        disableDefaultUI: true,
-        clickableIcons: false,
-        mapId: undefined,
-      });
-      let marker = null;
-      if (google.maps.Marker) {
-        marker = new google.maps.Marker({ map: m, position: initialPos });
+  function putMarker(location) {
+      try {
+          const marker = new google.maps.marker.AdvancedMarkerElement({
+              position: location,
+              map: map,
+              content: glyphImg.cloneNode(true)
+          });
       }
-      pano.addListener('position_changed', () => {
-        const pos = pano.getPosition() || (pano.getLocation && pano.getLocation()?.latLng);
-        if (pos) {
-          m.setCenter(pos);
-          if (marker) marker.setPosition(pos);
-        }
-      });
-    }
-  } catch (e) {
-    console.warn('Mini map init failed:', e);
+      catch  (error) {
+          console.error("Error in putting marker:", error);
+          //throw error;
+      }
   }
 });
 
