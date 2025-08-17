@@ -15,6 +15,8 @@
       #pano { width: 100%; height: 100%; }
       #miniMap { position: absolute; right: 12px; top: 12px; width: 200px; height: 170px; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,.15); background: #fff; z-index: 10; }
       #turnToast { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); background:#dc2626; color:white; padding: 1rem 1.5rem; border-radius:.5rem; font-size: 2rem; display:none; z-index: 11; box-shadow: 0 6px 18px rgba(220,38,38,.4); pointer-events: none; }
+      #authToast { position: fixed; left: 50%; top: calc(3rem + 8px); transform: translateX(-50%); background:#111827; color:white; padding: .75rem 1rem; border-radius: .5rem; display:none; z-index: 60; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+      #authToast .actions { display:inline-flex; gap:.5rem; margin-left:.75rem; }
       #side { display:none; border-left: 1px solid #e5e7eb; padding: 1rem; overflow: auto; }
       .controls { display:flex; gap:.5rem; margin:.5rem 0; flex-wrap:wrap; }
       input, button, select { padding: .5rem .6rem; border:1px solid #d1d5db; border-radius: .375rem; }
@@ -30,6 +32,7 @@
       body.side-open main { grid-template-columns: 1fr minmax(240px, 26vw); }
       body.side-open #side { display: block; position: static; box-shadow: none; }
       .meters { display:flex; align-items:center; gap:.25rem; }
+      #btnEditName { font-size: .75rem; padding: .2rem .45rem; margin-left: .5rem; border-radius: .25rem; border-color: #d1d5db; color: #374151; }
 
       /* Responsive side panel: hide on small screens, show as overlay when toggled */
       @media (max-width: 900px) {
@@ -60,8 +63,28 @@
         <div id="pano"></div>
         <div id="miniMap" aria-label="Mini map"></div>
         <div id="turnToast" role="status" aria-live="polite">Turn!</div>
+        <div id="authToast" role="dialog" aria-live="polite">
+          <span>Sign in to save your ride</span>
+          <span class="actions">
+            <button id="toastRegister" class="ghost">Register</button>
+            <button id="toastLogin" class="ghost">Login</button>
+            <button id="toastClose" class="ghost" title="Close">×</button>
+          </span>
+        </div>
       </div>
       <aside id="side">
+        <div class="section">
+          <h3>User</h3>
+          <div class="kvs small">
+            <div class="muted">Name:</div><div><span id="userName">—</span> <button id="btnEditName" class="ghost small">Edit</button></div>
+          </div>
+          <div class="controls" style="margin-top:.5rem;">
+            <button id="btnRegister" class="ghost">Register</button>
+            <button id="btnLogin" class="ghost">Login</button>
+            <button id="btnLogout" style="display:none;">Logout</button>
+          </div>
+          <div id="authHint" class="small muted" style="margin-top:.5rem; display:none;">Sign in to save your ride.</div>
+        </div>
         <div class="section">
           <h3>Device</h3>
           <div class="kvs small">

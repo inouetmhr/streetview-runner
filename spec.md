@@ -75,9 +75,9 @@ Notes:
 
 ### Auth Keys (KV)
 - `user:v1:{userId}` → `{ userId, username, createdAt, credentials: Array<{ id, publicKey, counter, transports? }> }`
-- `cred:v1:{credentialId}` → `userId` (lookup by credential ID)
+- `cred:v1:{credentialId}` → `{ userId }` (lookup by credential ID)
 - `challenge:v1:reg:{flowId}` → `{ challenge, userId, username, createdAt }` (ephemeral; TTL ~10m)
-- `challenge:v1:auth:{challenge}` → `createdAt` (ephemeral; TTL ~10m)
+- `challenge:v1:auth:{challenge}` → `{ createdAt }` (ephemeral; TTL ~10m)
 - `sess:v1:{token}` → `{ userId, createdAt }` (long‑lived; no TTL or 1y)
 
 ## Behavior

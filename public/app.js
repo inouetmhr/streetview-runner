@@ -147,46 +147,111 @@ class BLEWalker {
   }
 }
 
-// Simple UUID v4 generator for client identity
-function uuidv4() {
-  return (crypto?.randomUUID?.() || ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
-    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
-  ));
-}
-
-function getIdentity() {
-  let userId = localStorage.getItem("userId");
-  if (!userId) { userId = uuidv4(); localStorage.setItem("userId", userId); }
-  let username = localStorage.getItem("username") || "Runner";
-  localStorage.setItem("username", username);
-  return { userId, username };
-}
-
-async function fetchStatus(userId) {
+// Auth + API helpers
+async function fetchStatus() {
   try {
-    const res = await fetch(`/api/status?userId=${encodeURIComponent(userId)}`);
+    const res = await fetch(`/api/status`);
     if (!res.ok) throw new Error(`Status ${res.status}`);
     const data = await res.json();
     return data.status || null;
   } catch { return null; }
 }
 
-async function saveStatus(userId, location) {
+async function saveStatus(location) {
   try {
     await fetch(`/api/status`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ userId, location })
+      body: JSON.stringify({ location })
     });
   } catch {}
 }
 
-async function appendHistory(userId, point) {
+async function appendHistory(point) {
   try {
     await fetch(`/api/history`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ userId, point })
+      body: JSON.stringify({ point })
     });
   } catch {}
+}
+
+async function getSession() {
+  try {
+    const res = await fetch('/api/auth/session');
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j?.user || null;
+  } catch { return null; }
+}
+
+async function registerWithPasskey(username) {
+  try {
+    const res1 = await fetch('/api/auth/register/options', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username })
+    });
+    if (!res1.ok) throw new Error('reg options failed');
+    const { options, flowId } = await res1.json();
+    const { startRegistration } = await import('https://esm.sh/@simplewebauthn/browser@13');
+    const attResp = await startRegistration(options);
+    const res2 = await fetch('/api/auth/register/verify', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ flowId, response: attResp })
+    });
+    if (!res2.ok) throw new Error('reg verify failed');
+    return (await res2.json())?.user || null;
+  } catch (e) {
+    console.warn('register error', e);
+    return null;
+  }
+}
+
+async function loginWithPasskey() {
+  try {
+    const res1 = await fetch('/api/auth/login/options', { method: 'POST' });
+    if (!res1.ok) throw new Error('auth options failed');
+    const { options, flowId } = await res1.json();
+    const { startAuthentication } = await import('https://esm.sh/@simplewebauthn/browser@13');
+    const asn = await startAuthentication(options);
+    const res2 = await fetch('/api/auth/login/verify', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ flowId, response: asn })
+    });
+    if (!res2.ok) throw new Error('auth verify failed');
+    return (await res2.json())?.user || null;
+  } catch (e) {
+    console.warn('login error', e);
+    return null;
+  }
+}
+
+async function logoutSession() {
+  try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+}
+
+async function updateUsername(username) {
+  try {
+    const res = await fetch('/api/auth/username', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username })
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j?.user || null;
+  } catch { return null; }
+}
+
+// Generate friendly display names like "Blue Dragon"
+function generateFriendlyName() {
+  const left = [
+    'Blue','Crimson','Golden','Silver','Emerald','Sapphire','Ruby','Azure','Scarlet','Ivory','Onyx','Amber','Cobalt','Violet','Indigo','Coral','Teal','Misty','Sunny','Silent','Brave','Swift','Lunar','Solar','Neon','Frosty','Wild'
+  ];
+  const right = [
+    'Dragon','Tiger','Falcon','Wolf','Eagle','Lion','Leopard','Shark','Panther','Phoenix','Bear','Dolphin','Fox','Hawk','Otter','Orca','Raven','Puma','Cobra','Lynx','Viper','Kite','Stallion','Mustang'
+  ];
+  const a = left[Math.floor(Math.random()*left.length)];
+  const b = right[Math.floor(Math.random()*right.length)];
+  return `${a} ${b}`;
 }
 
 function initMap(start) {
@@ -242,8 +307,69 @@ function angleDelta(a, b) {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
-  const ident = getIdentity();
-  const last = await fetchStatus(ident.userId);
+  // Session/auth state and UI
+  const uiUser = { name: qs('userName'), btnEdit: qs('btnEditName'), btnReg: qs('btnRegister'), btnLogin: qs('btnLogin'), btnLogout: qs('btnLogout'), hint: qs('authHint') };
+  const authToast = { el: qs('authToast'), btnLogin: qs('toastLogin'), btnRegister: qs('toastRegister'), btnClose: qs('toastClose') };
+  let sessionUser = await getSession();
+  const updateUserUI = () => {
+    if (sessionUser) {
+      uiUser.name.textContent = sessionUser.username || 'Runner';
+      uiUser.btnReg.style.display = 'none';
+      if (uiUser.btnEdit) uiUser.btnEdit.style.display = '';
+      uiUser.btnLogin.style.display = 'none';
+      uiUser.btnLogout.style.display = '';
+      uiUser.hint.style.display = 'none';
+      if (authToast.el) authToast.el.style.display = 'none';
+    } else {
+      uiUser.name.textContent = '—';
+      uiUser.btnReg.style.display = '';
+      if (uiUser.btnEdit) uiUser.btnEdit.style.display = 'none';
+      uiUser.btnLogin.style.display = '';
+      uiUser.btnLogout.style.display = 'none';
+      uiUser.hint.style.display = '';
+      if (authToast.el) authToast.el.style.display = 'block';
+    }
+  };
+  updateUserUI();
+
+  const doRegister = async () => {
+    const suggested = generateFriendlyName();
+    let input = prompt('Choose a display name for your passkey:', suggested);
+    if (input === null) return; // user canceled
+    const username = (input || '').trim() || suggested;
+    const user = await registerWithPasskey(username);
+    if (user) { sessionUser = user; updateUserUI(); await afterLogin(); }
+  };
+  const doLogin = async () => {
+    const user = await loginWithPasskey();
+    if (user) { sessionUser = user; updateUserUI(); await afterLogin(); }
+  };
+  const doLogout = async () => {
+    await logoutSession();
+    try { document.body.classList.remove('side-open'); } catch {}
+    // Reload to reset app state and enforce unauthenticated flows
+    location.reload();
+  };
+  uiUser.btnReg?.addEventListener('click', doRegister);
+  uiUser.btnLogin?.addEventListener('click', doLogin);
+  uiUser.btnLogout?.addEventListener('click', doLogout);
+  uiUser.btnEdit?.addEventListener('click', async () => {
+    if (!sessionUser) return;
+    const suggested = sessionUser.username || generateFriendlyName();
+    const next = prompt('Edit display name:', suggested);
+    if (next === null) return;
+    const name = (next || '').trim();
+    if (!name) return;
+    const updated = await updateUsername(name);
+    if (updated) { sessionUser = updated; updateUserUI(); }
+  });
+  // Toast actions mirror side-pane buttons
+  authToast.btnRegister?.addEventListener('click', doRegister);
+  authToast.btnLogin?.addEventListener('click', doLogin);
+  authToast.btnClose?.addEventListener('click', () => { if (authToast.el) authToast.el.style.display = 'none'; });
+
+  // Map init: fetch last status if logged in
+  const last = sessionUser ? await fetchStatus() : null;
   const defaultLocation = {lat:35.681296, lng:139.758922, heading: 190}; // Otemachi, Tokyo
   const [map, pano] = initMap(last || defaultLocation);
   if (!map) return;
@@ -278,6 +404,23 @@ window.addEventListener("DOMContentLoaded", async () => {
     cadence: qs('cadence'),
     distance: qs('distance'),
   };
+
+  // After login tasks: refresh status and load today's history markers
+  async function afterLogin() {
+    try {
+      const st = await fetchStatus();
+      if (st && Number.isFinite(st.lat) && Number.isFinite(st.lng)) {
+        try {
+          pano.setPosition({ lat: st.lat, lng: st.lng });
+          if (Number.isFinite(st.heading)) {
+            const pov = pano.getPov() || {}; pov.heading = st.heading; pov.pitch = 0; pano.setPov(pov);
+          }
+          session.prevPosition = { lat: st.lat, lng: st.lng };
+        } catch {}
+      }
+      await loadHistoryAndMarkers();
+    } catch {}
+  }
 
   function renderMetrics(metrics, ble) {
     if (session.turnBlocked) {
@@ -454,8 +597,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (changed) { 
       session.lastSaved = { ...currentPos, t: performance.now() };
       const heading = pano.getPov()?.heading || 0;
-      saveStatus(ident.userId, { ...currentPos, heading });
-      appendHistory(ident.userId, { ...currentPos, heading, ts: Date.now() });
+      if (sessionUser) {
+        saveStatus({ ...currentPos, heading });
+        appendHistory({ ...currentPos, heading, ts: Date.now() });
+      }
     }
   });
 
@@ -471,9 +616,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (ui.connectBtn) ui.connectBtn.addEventListener('click', doConnect);
   // No explicit disconnect button per spec; disconnect via OS/BLE UI
 
-  // Daily distance persistence (localStorage)
+  // Daily distance persistence (localStorage), scoped per user
   const dayString = () => new Date().toISOString().slice(0,10);
-  const ddKey = (dStr) => `dailyDistance:${ident.userId}:${dStr}`;
+  const ddKey = (dStr) => `dailyDistance:${sessionUser?.userId || 'anon'}:${dStr}`;
   const loadDailyDistanceFor = (dStr) => {
     const v = parseFloat(localStorage.getItem(ddKey(dStr)) ?? '');
     return Number.isFinite(v) ? v : 0;
@@ -489,7 +634,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   async function loadHistoryAndMarkers() {
     const todayStr = session.dayStr;
     try {
-      const res = await fetch(`/api/history?userId=${encodeURIComponent(ident.userId)}&day=${todayStr}`);
+      const res = await fetch(`/api/history?day=${todayStr}`);
       if (!res.ok) return;
       const data = await res.json();
       const items = Array.isArray(data.items) ? data.items : [];
@@ -507,7 +652,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       }
     } catch {}
   }
-  await loadHistoryAndMarkers();
+  if (sessionUser) await loadHistoryAndMarkers();
   // Side pane toggle: hidden by default; show with side-open on all screens
   ui.togglePane.addEventListener('click', () => {
     document.body.classList.toggle('side-open');
