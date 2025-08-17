@@ -39,16 +39,17 @@
 - Library: `@simplewebauthn/server@^13` (server) and optionally `@simplewebauthn/browser@^13` (client).
 - Endpoints:
   - GET `/api/auth/session` → `{ ok:true, user:{ userId, username } }` or 401 when no valid session.
-  - POST `/api/auth/register/options` → WebAuthn registration options. Server generates `userId`.
-  - POST `/api/auth/register/verify` → verifies attestation; creates user + credential; sets `svr_session` cookie; `{ ok:true, user:{ userId, username } }`.
-  - POST `/api/auth/login/options` → WebAuthn authentication options (resident/discoverable; empty `allowCredentials`).
-  - POST `/api/auth/login/verify` → verifies assertion; updates counter; sets `svr_session` cookie; `{ ok:true, user:{ userId, username } }`.
+  - POST `/api/auth/register/options` → returns `{ ok:true, options, flowId }`. Server generates `userId` and uses byte `userID` for WebAuthn.
+  - POST `/api/auth/register/verify` → body `{ flowId, response }`; verifies attestation; creates user + credential; sets `svr_session` cookie; returns `{ ok:true, user:{ userId, username } }`.
+  - POST `/api/auth/login/options` → returns `{ ok:true, options, flowId }` (resident/discoverable; empty `allowCredentials`).
+  - POST `/api/auth/login/verify` → body `{ flowId, response }`; verifies assertion; updates counter; sets `svr_session` cookie; returns `{ ok:true, user:{ userId, username } }`.
+  - POST `/api/auth/username` → body `{ username:string }`; updates display name; returns `{ ok:true, user:{ userId, username } }`.
   - POST `/api/auth/logout` → deletes session and clears cookie; `{ ok:true }`.
--
+
 Notes:
-- Registration requires resident keys: `authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' }`, `attestationType: 'none'`.
+- Registration requires resident keys: `authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' }`, `attestationType: 'none'`. WebAuthn `userID` must be a ≤64‑byte BufferSource (not a string).
 - Authentication requires `userVerification: 'preferred'` and discoverable credentials (no `allowCredentials`).
-- Origin header must equal `expectedOrigin` on all auth endpoints.
+- Origin header must equal `expectedOrigin` on all auth endpoints (both options and verify).
 
 ### BLE (FTMS)
 - Service: Fitness Machine Service `0x1826`.
@@ -62,10 +63,11 @@ Notes:
   - It shows s speed meter (km/h) and and an odometer (km) which shows traveled distance for the day.
   - BLE connect button is shown when and only no BLE device is connected. 
 - Side Pane: following elements are show in a pane that is collapsible and hidden in default.
-  - User info: user name, logout button.
+  - User info: user name with an Edit button, register/login/logout controls.
   - Status: Device name, active service, connection status; sensor metrics: speed (km/h), cadence (rpm), distance (m).
 - Interactions: choose forward link closest to current heading;  auto‑align POV to link heading when turn >45°.
 - "Turn!" notify toast and beep to request the user to choose direction.
+ - Auth prompt: a small toast is shown below the header when logged out, prompting Register or Login; hides on successful auth.
 
 ## Data Model / Storage (KV)
 - Keys:
@@ -77,7 +79,7 @@ Notes:
 - `user:v1:{userId}` → `{ userId, username, createdAt, credentials: Array<{ id, publicKey, counter, transports? }> }`
 - `cred:v1:{credentialId}` → `{ userId }` (lookup by credential ID)
 - `challenge:v1:reg:{flowId}` → `{ challenge, userId, username, createdAt }` (ephemeral; TTL ~10m)
-- `challenge:v1:auth:{challenge}` → `{ createdAt }` (ephemeral; TTL ~10m)
+- `challenge:v1:auth:{flowId}` → `{ challenge, createdAt }` (ephemeral; TTL ~10m)
 - `sess:v1:{token}` → `{ userId, createdAt }` (long‑lived; no TTL or 1y)
 
 ## Behavior
@@ -94,6 +96,7 @@ Notes:
 - On login
   - load daily distance for the user.
   - load today's history and put marker on mini map.
+  - refresh the pano position and heading from `/api/status` if present.
 - On BLE `characteristicvaluechanged` event, parsing each event, and when total_distance delta from previous one > 0 
   - update metrics and UI
   - advance (in pano), that will trigger `links_changed` event followed by `position_changed` event.
@@ -132,7 +135,7 @@ Notes:
 - Passkey auth works end‑to‑end: first‑run registration creates session; subsequent visits auto‑login via session; existing APIs reject unauthenticated access (401) and use session‑derived `userId`.
 
 ## Test Plan (Manual)
-1) `npm run dev` and open `http://127.0.0.1:8787` over a secure context.
+1) Prefer `npm run preview` (HTTPS) for auth flows; open the provided workers.dev URL. For BLE-only checks, `npm run dev` is sufficient.
 2) Connect an FTMS bike; verify device/service labels, cadence rpm, speed km/h, distance m updating.
 3) Enable auto‑advance; confirm “Turn!” alerts on sharp turns.
 4) History persists in KV (refresh and resume last position and day's history).
@@ -141,6 +144,7 @@ Notes:
    - First visit: `GET /api/auth/session` returns 401; start registration; passkey created; cookie set; session shows user.
    - Refresh: session auto‑login; protected APIs succeed without `userId` in client.
    - Logout: `POST /api/auth/logout`; subsequent protected API calls return 401.
+   - Edit username: `POST /api/auth/username` updates display name; side pane reflects change.
 
 ## Deliverables
 - Frontend: `public/app.js`, `public/index.html` (labels as needed), audio + rate limiting.
