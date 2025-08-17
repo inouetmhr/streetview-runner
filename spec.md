@@ -70,10 +70,10 @@ Notes:
  - Auth prompt: a small toast is shown below the header when logged out, prompting Register or Login; hides on successful auth.
 
 ## Data Model / Storage (KV)
-- Keys:
+### User data
   - `status:v1:{userId}` → `{ lat, lng, heading, ts }` (JSON)
   - `history:v1:{userId}:{YYYY-MM-DD}` → `Array<{ lat, lng, heading, ts }>`
-- Constraints: trim history arrays to 500 items; no TTL required by default.
+    - Constraints: trim history arrays to 500 items by a key (day).
 
 ### Auth Keys (KV)
 - `user:v1:{userId}` → `{ userId, username, createdAt, credentials: Array<{ id, publicKey, counter, transports? }> }`
@@ -148,8 +148,18 @@ Notes:
 
 ## Deliverables
 - Frontend: `public/app.js`, `public/index.html` (labels as needed), audio + rate limiting.
-- Worker: `src/index.js` with `/api/status` and `/api/history` + HTML key injection.
+- Worker: `src/index.js`. 
 - Docs: this spec at `/spec.md`.
+
+## TODO (tobe implemented in the future)
+- ユーザ登録時に、スタート地点を web の現在地を引き継ぐ
+- logout 時に、現在地をリセットしない (reload しつつ、場所は同じところにする)
+- historyの500制限をやめる
+- 日、週、月の単位で hisotry を見る画面を作る
+  - (option) それぞれの移動距離も表示する
+- cloudflareにデプロイする
+- 同じアカウントで別のdevice (passkey) を登録できるようにする
+
 
 ## Rollout / Backout
 - nothing now.
