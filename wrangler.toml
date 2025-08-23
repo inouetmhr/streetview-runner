@@ -1,6 +1,7 @@
 name = "svr-cf"
 main = "src/index.js"
 compatibility_date = "2024-09-19"
+routes = [{ pattern = "street-view-runner.noue.org/*", zone_name = "noue.org" }]
 
  # The following configuration unconditionally invokes the Worker script at
  # `src/index.ts`, which can programatically fetch assets via the ASSETS binding
@@ -12,12 +13,9 @@ run_worker_first = true
 [dev]
 port = 8787
 
-[vars]
-# Replace in Cloudflare dashboard or with `wrangler secret put` for real key management
-GOOGLE_MAPS_API_KEY = "TESTTEST"
+# Note: Do not set secrets in code. For local dev, use `.dev.vars`.
 
 [[kv_namespaces]]
-binding = "KV"
+binding = "SVR_KV"
 # Placeholder IDs work for local dev; set real IDs after creating KV in Cloudflare
-id = "dev-kv-placeholder"
-preview_id = "dev-kv-placeholder"
+id = "a391c69e3e8d44c4840d9d4da02f5a6c"

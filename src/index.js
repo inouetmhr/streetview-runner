@@ -288,7 +288,7 @@ async function handleApi(request, env, url) {
       const userId = await getSessionUserId(request, env);
       if (!userId) return json({ error: "unauthorized" }, 401);
       const key = statusKey(userId);
-      const stored = env.KV ? await env.KV.get(key, { type: "json" }) : null;
+      const stored = env.SVR_KV ? await env.SVR_KV.get(key, { type: "json" }) : null;
       const fallback = { lat:35.681296, lng:139.758922, heading: 190, ts: Date.now() }; // otemachi
       //TODO:ここでのfalbackじゃなく、frontend側で画面上の現在位置を使うようにする
       return json({ ok: true, status: stored || fallback });
@@ -308,8 +308,8 @@ async function handleApi(request, env, url) {
         heading: isFinite(location.heading) ? Number(location.heading) : 0,
         ts: Date.now(),
       };
-      if (env.KV) {
-        await env.KV.put(statusKey(sessionUserId), JSON.stringify(status));
+      if (env.SVR_KV) {
+        await env.SVR_KV.put(statusKey(sessionUserId), JSON.stringify(status));
       }
       return json({ ok: true });
     }
@@ -322,7 +322,7 @@ async function handleApi(request, env, url) {
       const day = (searchParams.get("day") || today()).trim();
       if (!userId) return json({ error: "unauthorized" }, 401);
       const key = historyKey(userId, day);
-      const items = env.KV ? await env.KV.get(key, { type: "json" }) : null;
+      const items = env.SVR_KV ? await env.SVR_KV.get(key, { type: "json" }) : null;
       return json({ ok: true, items: Array.isArray(items) ? items : [] });
     }
     if (request.method === "POST") {
@@ -342,15 +342,15 @@ async function handleApi(request, env, url) {
         ts: isFinite(point.ts) ? Number(point.ts) : Date.now(),
       };
       let arr = [];
-      if (env.KV) {
+      if (env.SVR_KV) {
         const key = historyKey(userId, day);
-        const stored = await env.KV.get(key, { type: "json" });
+        const stored = await env.SVR_KV.get(key, { type: "json" });
         arr = Array.isArray(stored) ? stored : [];
         arr.push(item);
         // Keep array from growing unbounded; trim to last N
         const MAX_POINTS = 500;
         if (arr.length > MAX_POINTS) arr = arr.slice(arr.length - MAX_POINTS);
-        await env.KV.put(key, JSON.stringify(arr));
+        await env.SVR_KV.put(key, JSON.stringify(arr));
       }
       return json({ ok: true });
     }
@@ -428,19 +428,19 @@ async function getUser(env, userId) {
 }
 
 async function getKV(env, key) {
-  if (!env.KV) return null;
-  return await env.KV.get(key, { type: "json" });
+  if (!env.SVR_KV) return null;
+  return await env.SVR_KV.get(key, { type: "json" });
 }
 
 async function putKV(env, key, value, options = {}) {
-  if (!env.KV) return;
+  if (!env.SVR_KV) return;
   const body = typeof value === "string" ? value : JSON.stringify(value);
-  await env.KV.put(key, body, options);
+  await env.SVR_KV.put(key, body, options);
 }
 
 async function delKV(env, key) {
-  if (!env.KV) return;
-  await env.KV.delete(key);
+  if (!env.SVR_KV) return;
+  await env.SVR_KV.delete(key);
 }
 
 // Base64URL helpers (Uint8Array <-> base64url string)

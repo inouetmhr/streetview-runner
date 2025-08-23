@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Modules
-- `spec.md` : Specification of this web application.
+- `SPEC.md` : Specification of this web application.
 - `src/`: Cloudflare Worker code. Entry is `src/index.js` exporting `fetch`.
 - `public/`: Static assets served via Wrangler assets (`index.html`, `app.js`).
 - `wrangler.toml`: Worker, assets, and KV configuration.

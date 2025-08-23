@@ -334,7 +334,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   const doRegister = async () => {
     const suggested = generateFriendlyName();
-    let input = prompt('Choose a display name for your passkey:', suggested);
+    let input = prompt('Choose your display name:', suggested);
     if (input === null) return; // user canceled
     const username = (input || '').trim() || suggested;
     const user = await registerWithPasskey(username);

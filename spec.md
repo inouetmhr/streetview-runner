@@ -15,7 +15,7 @@
 
 ## Environment
 - Repo: root of this project; frontend in `public/`, Worker in `src/`.
-- Runtime: Browser (Web Bluetooth secure context) + Cloudflare Workers (KV bound as `KV`, assets bound as `ASSETS`).
+- Runtime: Browser (Web Bluetooth secure context) + Cloudflare Workers (KV bound as `SVR_KV`, assets bound as `ASSETS`).
 - Approvals/Sandbox: approvals on‑request; filesystem workspace‑write; network restricted.
 - Commands: `npm run dev`, `npm run preview`, `npm run deploy`.
 - Secrets: `GOOGLE_MAPS_API_KEY` via Wrangler secret; for local `.dev.vars` only.
@@ -149,15 +149,15 @@ Notes:
 ## Deliverables
 - Frontend: `public/app.js`, `public/index.html` (labels as needed), audio + rate limiting.
 - Worker: `src/index.js`. 
-- Docs: this spec at `/spec.md`.
+- Docs: this spec at `/SPEC.md`.
 
 ## TODO (tobe implemented in the future)
 - ユーザ登録時に、スタート地点を web の現在地を引き継ぐ
 - logout 時に、現在地をリセットしない (reload しつつ、場所は同じところにする)
 - historyの500制限をやめる
+- KVの書き込み制限が厳しいので別のstoreにする
 - 日、週、月の単位で hisotry を見る画面を作る
   - (option) それぞれの移動距離も表示する
-- cloudflareにデプロイする
 - 同じアカウントで別のdevice (passkey) を登録できるようにする
 
 
