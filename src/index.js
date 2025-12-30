@@ -287,11 +287,11 @@ async function handleApi(request, env, url) {
     if (request.method === "GET") {
       const userId = await getSessionUserId(request, env);
       if (!userId) return json({ error: "unauthorized" }, 401);
-      const key = statusKey(userId);
-      const stored = env.SVR_KV ? await env.SVR_KV.get(key, { type: "json" }) : null;
-      const fallback = { lat:35.681296, lng:139.758922, heading: 190, ts: Date.now() }; // otemachi
-      //TODO:ここでのfalbackじゃなく、frontend側で画面上の現在位置を使うようにする
-      return json({ ok: true, status: stored || fallback });
+      let status = null;
+      if (env.SVR_DB) {
+        status = await getLatestHistoryFromD1(env, userId);
+      }
+      return json({ ok: true, status: status || null });
     }
     if (request.method === "POST") {
       const body = await safeJson(request);
@@ -308,9 +308,6 @@ async function handleApi(request, env, url) {
         heading: isFinite(location.heading) ? Number(location.heading) : 0,
         ts: Date.now(),
       };
-      if (env.SVR_KV) {
-        await env.SVR_KV.put(statusKey(sessionUserId), JSON.stringify(status));
-      }
       return json({ ok: true });
     }
     return json({ error: "method not allowed" }, 405, { Allow: "GET, POST" });
@@ -321,9 +318,11 @@ async function handleApi(request, env, url) {
       const userId = await getSessionUserId(request, env);
       const day = (searchParams.get("day") || today()).trim();
       if (!userId) return json({ error: "unauthorized" }, 401);
-      const key = historyKey(userId, day);
-      const items = env.SVR_KV ? await env.SVR_KV.get(key, { type: "json" }) : null;
-      return json({ ok: true, items: Array.isArray(items) ? items : [] });
+      if (env.SVR_DB) {
+        const items = await getHistoryFromD1(env, userId, day);
+        return json({ ok: true, items });
+      }
+      return json({ ok: true, items: [] });
     }
     if (request.method === "POST") {
       const body = await safeJson(request);
@@ -341,16 +340,8 @@ async function handleApi(request, env, url) {
         heading: isFinite(point.heading) ? Number(point.heading) : 0,
         ts: isFinite(point.ts) ? Number(point.ts) : Date.now(),
       };
-      let arr = [];
-      if (env.SVR_KV) {
-        const key = historyKey(userId, day);
-        const stored = await env.SVR_KV.get(key, { type: "json" });
-        arr = Array.isArray(stored) ? stored : [];
-        arr.push(item);
-        // Keep array from growing unbounded; trim to last N
-        const MAX_POINTS = 500;
-        if (arr.length > MAX_POINTS) arr = arr.slice(arr.length - MAX_POINTS);
-        await env.SVR_KV.put(key, JSON.stringify(arr));
+      if (env.SVR_DB) {
+        await putHistoryToD1(env, userId, day, item);
       }
       return json({ ok: true });
     }
@@ -360,8 +351,6 @@ async function handleApi(request, env, url) {
   return json({ error: "not found" }, 404);
 }
 
-function statusKey(userId) { return `status:v1:${userId}`; }
-function historyKey(userId, day) { return `history:v1:${userId}:${day}`; }
 function today() { return new Date().toISOString().slice(0, 10); }
 
 // ---------- Auth helpers & storage ----------
@@ -441,6 +430,28 @@ async function putKV(env, key, value, options = {}) {
 async function delKV(env, key) {
   if (!env.SVR_KV) return;
   await env.SVR_KV.delete(key);
+}
+
+async function getHistoryFromD1(env, userId, day) {
+  const res = await env.SVR_DB
+    .prepare("SELECT lat, lng, heading, ts FROM history WHERE user_id = ?1 AND day = ?2 ORDER BY ts ASC")
+    .bind(userId, day)
+    .all();
+  return Array.isArray(res?.results) ? res.results : [];
+}
+
+async function getLatestHistoryFromD1(env, userId) {
+  return await env.SVR_DB
+    .prepare("SELECT lat, lng, heading, ts FROM history WHERE user_id = ?1 ORDER BY ts DESC LIMIT 1")
+    .bind(userId)
+    .first();
+}
+
+async function putHistoryToD1(env, userId, day, item) {
+  await env.SVR_DB
+    .prepare("INSERT INTO history (user_id, day, ts, lat, lng, heading) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
+    .bind(userId, day, item.ts, item.lat, item.lng, item.heading)
+    .run();
 }
 
 // Base64URL helpers (Uint8Array <-> base64url string)

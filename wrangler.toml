@@ -19,3 +19,8 @@ port = 8787
 binding = "SVR_KV"
 # Placeholder IDs work for local dev; set real IDs after creating KV in Cloudflare
 id = "a391c69e3e8d44c4840d9d4da02f5a6c"
+
+[[d1_databases]]
+binding = "SVR_DB"
+database_name = "svr-db"
+database_id = "297f593c-1925-4f03-ab2d-8d26efc8272d"

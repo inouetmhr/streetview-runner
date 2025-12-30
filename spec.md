@@ -1,13 +1,12 @@
 # Street View Runner Web App Spec
-
 ## Overview
 - Build a Street View “indoor ride” where an FTMS bike drives movement. Web Bluetooth reads Indoor Bike Data and the app advances panoramas by true distance traveled.
-- Cloudflare Worker stores last location and per‑day history in KV.
+- Cloudflare Worker derives last location from D1 history and stores per‑day history in D1.
 
 ## Goals
 - FTMS‑only BLE (service `0x1826`), subscribe to Indoor Bike Data (`0x2AD2`).
 - Movement driven by total distance deltas from BLE device.
-- Persist last pano `{lat,lng,heading,ts}` and path history.
+- Persist path history and derive last pano `{lat,lng,heading,ts}` from history.
 - Passkey-only simple authentication.
 
 ## Non‑Goals
@@ -15,7 +14,7 @@
 
 ## Environment
 - Repo: root of this project; frontend in `public/`, Worker in `src/`.
-- Runtime: Browser (Web Bluetooth secure context) + Cloudflare Workers (KV bound as `SVR_KV`, assets bound as `ASSETS`).
+- Runtime: Browser (Web Bluetooth secure context) + Cloudflare Workers (KV bound as `SVR_KV`, D1 bound as `SVR_DB`, assets bound as `ASSETS`).
 - Approvals/Sandbox: approvals on‑request; filesystem workspace‑write; network restricted.
 - Commands: `npm run dev`, `npm run preview`, `npm run deploy`.
 - Secrets: `GOOGLE_MAPS_API_KEY` via Wrangler secret; for local `.dev.vars` only.
@@ -25,14 +24,15 @@
 ### Routes (Worker)
 - GET `/api/status`
   - 200 `{ ok: true, status: { lat:number, lng:number, heading:number, ts:number } }`
+  - With D1 enabled, status is derived from the latest history point (any day).
 - POST `/api/status`
   - Body `{ location:{ lat:number, lng:number, heading?:number } }`
-  - 200 `{ ok: true }`; 400 on invalid/missing fields.
+  - 200 `{ ok: true }`; 400 on invalid/missing fields. No server-side persistence when D1 is enabled.
 - GET `/api/history?day=YYYY-MM-DD`
   - 200 `{ ok: true, items: Array<{ lat,lng,heading,ts }> }`; day defaults to today.
 - POST `/api/history`
   - Body `{ point:{ lat:number, lng:number, heading?:number, ts?:number, day?:string } }`
-  - 200 `{ ok: true }`; trims to last 500 items per day; 400 on invalid input.
+  - 200 `{ ok: true }`; 400 on invalid input.
 - Errors: 405 Method Not Allowed with `Allow` header for wrong method.
 
 ### Authentication (Passkey)
@@ -69,11 +69,12 @@ Notes:
 - "Turn!" notify toast and beep to request the user to choose direction.
  - Auth prompt: a small toast is shown below the header when logged out, prompting Register or Login; hides on successful auth.
 
-## Data Model / Storage (KV)
+## Data Model / Storage (KV + D1)
 ### User data
-  - `status:v1:{userId}` → `{ lat, lng, heading, ts }` (JSON)
-  - `history:v1:{userId}:{YYYY-MM-DD}` → `Array<{ lat, lng, heading, ts }>`
-    - Constraints: trim history arrays to 500 items by a key (day).
+  - KV: no status storage (status derives from latest history when D1 enabled)
+  - D1: `history` table stores per‑day points (no KV fallback)
+    - Columns: `user_id`, `day`, `ts`, `lat`, `lng`, `heading`
+    - Index: `(user_id, day, ts)`
 
 ### Auth Keys (KV)
 - `user:v1:{userId}` → `{ userId, username, createdAt, credentials: Array<{ id, publicKey, counter, transports? }> }`
@@ -107,7 +108,15 @@ Notes:
 - On Maps `links_changed` event
   - further advance if there still are distance to go
 - On Maps `position_changed` event
-  - persist location every ≥10 m.
+  - save last position to localStorage on every event.
+  - persist status to cloud every ≥100 m.
+  - persist history to cloud every ≥100 m.
+  - update daily distance in localStorage from every delta.
+
+## Local Storage
+- `dailyDistance:{userId}:{YYYY-MM-DD}` → daily distance meters (string).
+- `lastPosition:{userId}` → `{ lat, lng, heading }` JSON (last known pano position).
+- Startup prefers `lastPosition` over `/api/status` when available.
 
 ## Security
 - Validate `userId`, `lat`, `lng`, and numeric types server‑side.
@@ -152,14 +161,9 @@ Notes:
 - Docs: this spec at `/SPEC.md`.
 
 ## TODO (tobe implemented in the future)
-- ユーザ登録時に、スタート地点を web の現在地を引き継ぐ
-- logout 時に、現在地をリセットしない (reload しつつ、場所は同じところにする)
-- historyの500制限をやめる
-- KVの書き込み制限が厳しいので別のstoreにする
 - 日、週、月の単位で hisotry を見る画面を作る
   - (option) それぞれの移動距離も表示する
 - 同じアカウントで別のdevice (passkey) を登録できるようにする
-
 
 ## Rollout / Backout
 - nothing now.

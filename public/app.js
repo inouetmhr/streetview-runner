@@ -332,19 +332,58 @@ window.addEventListener("DOMContentLoaded", async () => {
   };
   updateUserUI();
 
+  // Last known position persistence (localStorage), scoped per user
+  const lpKey = (userId) => `lastPosition:${userId || 'anon'}`;
+  const loadLastPositionFor = (userId) => {
+    try {
+      const raw = localStorage.getItem(lpKey(userId));
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data || !Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return null;
+      return { lat: data.lat, lng: data.lng, heading: Number.isFinite(data.heading) ? data.heading : 0 };
+    } catch { return null; }
+  };
+  const saveLastPositionFor = (userId, pos) => {
+    try { localStorage.setItem(lpKey(userId), JSON.stringify(pos)); } catch {}
+  };
+
+  let map = null;
+  let pano = null;
+
+  const captureCurrentPosition = () => {
+    const pos = pano?.getPosition?.() || map?.getCenter?.();
+    if (!pos) return null;
+    const lat = typeof pos.lat === "function" ? pos.lat() : pos.lat;
+    const lng = typeof pos.lng === "function" ? pos.lng() : pos.lng;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const heading = pano?.getPov?.()?.heading;
+    return { lat, lng, heading: Number.isFinite(heading) ? heading : 0 };
+  };
+
   const doRegister = async () => {
+    const wasAnonymous = !sessionUser;
     const suggested = generateFriendlyName();
     let input = prompt('Choose your display name:', suggested);
     if (input === null) return; // user canceled
     const username = (input || '').trim() || suggested;
     const user = await registerWithPasskey(username);
-    if (user) { sessionUser = user; updateUserUI(); await afterLogin(); }
+    if (user) {
+      if (wasAnonymous) {
+        const inherited = captureCurrentPosition() || loadLastPositionFor(null);
+        if (inherited) saveLastPositionFor(user.userId, inherited);
+      }
+      sessionUser = user;
+      updateUserUI();
+      await afterLogin();
+    }
   };
   const doLogin = async () => {
     const user = await loginWithPasskey();
     if (user) { sessionUser = user; updateUserUI(); await afterLogin(); }
   };
   const doLogout = async () => {
+    const pos = captureCurrentPosition();
+    if (pos) saveLastPositionFor(null, pos);
     await logoutSession();
     try { document.body.classList.remove('side-open'); } catch {}
     // Reload to reset app state and enforce unauthenticated flows
@@ -368,11 +407,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   authToast.btnLogin?.addEventListener('click', doLogin);
   authToast.btnClose?.addEventListener('click', () => { if (authToast.el) authToast.el.style.display = 'none'; });
 
-  // Map init: fetch last status if logged in
-  const last = sessionUser ? await fetchStatus() : null;
+  // Map init: prefer local last position; fall back to status if logged in
+  const localStart = loadLastPositionFor(sessionUser?.userId);
+  const last = localStart || (sessionUser ? await fetchStatus() : null);
   const defaultLocation = {lat:35.681296, lng:139.758922, heading: 190}; // Otemachi, Tokyo
-  const [map, pano] = initMap(last || defaultLocation);
-  if (!map) return;
+  [map, pano] = initMap(last || defaultLocation) || [];
+  if (!map || !pano) return;
 
   const glyphImg = document.createElement("img");
   glyphImg.src = "/circle_dot.png";
@@ -382,7 +422,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     distance_togo: 0,
     prevPosition: null,
     lastHistoryPoint: null,
-    lastSaved: null,
+    lastStatusSaved: null,
+    lastHistorySaved: null,
     turnBlocked: false,
     // For header speed measurement
     prevTimeMs: Date.now(),
@@ -408,14 +449,16 @@ window.addEventListener("DOMContentLoaded", async () => {
   // After login tasks: refresh status and load today's history markers
   async function afterLogin() {
     try {
+      const local = loadLastPositionFor(sessionUser?.userId);
       const st = await fetchStatus();
-      if (st && Number.isFinite(st.lat) && Number.isFinite(st.lng)) {
+      const next = local || st;
+      if (next && Number.isFinite(next.lat) && Number.isFinite(next.lng)) {
         try {
-          pano.setPosition({ lat: st.lat, lng: st.lng });
-          if (Number.isFinite(st.heading)) {
-            const pov = pano.getPov() || {}; pov.heading = st.heading; pov.pitch = 0; pano.setPov(pov);
+          pano.setPosition({ lat: next.lat, lng: next.lng });
+          if (Number.isFinite(next.heading)) {
+            const pov = pano.getPov() || {}; pov.heading = next.heading; pov.pitch = 0; pano.setPov(pov);
           }
-          session.prevPosition = { lat: st.lat, lng: st.lng };
+          session.prevPosition = { lat: next.lat, lng: next.lng };
         } catch {}
       }
       await loadHistoryAndMarkers();
@@ -552,6 +595,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     const loc = pano.getLocation();
     if (!loc || !loc.latLng) return;
     const currentPos = { lat: loc.latLng.lat(), lng: loc.latLng.lng() };
+    const heading = pano.getPov()?.heading || 0;
+    saveLastPositionFor(sessionUser?.userId, { ...currentPos, heading });
     // Subtract actual moved distance from backlog
     let moved = 0;
     if (session.prevPosition) {
@@ -592,13 +637,20 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     putMarker(session.prevPosition);
     session.prevPosition = currentPos;
-    // Persist only after moving ≥10 m per spec (no time fallback)
-    const changed = !session.lastSaved || distMeters(session.lastSaved, currentPos) >= 10;
-    if (changed) { 
-      session.lastSaved = { ...currentPos, t: performance.now() };
-      const heading = pano.getPov()?.heading || 0;
+    // Persist status and history at different intervals (no time fallback)
+    const STATUS_SAVE_DISTANCE_M = 100;
+    const HISTORY_SAVE_DISTANCE_M = 100;
       if (sessionUser) {
+        const statusChanged = !session.lastStatusSaved
+          || distMeters(session.lastStatusSaved, currentPos) >= STATUS_SAVE_DISTANCE_M;
+        if (statusChanged) {
+          session.lastStatusSaved = { ...currentPos };
         saveStatus({ ...currentPos, heading });
+      }
+      const historyChanged = !session.lastHistorySaved
+        || distMeters(session.lastHistorySaved, currentPos) >= HISTORY_SAVE_DISTANCE_M;
+      if (historyChanged) {
+        session.lastHistorySaved = { ...currentPos };
         appendHistory({ ...currentPos, heading, ts: Date.now() });
       }
     }
