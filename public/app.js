@@ -194,14 +194,38 @@ async function registerWithPasskey(username) {
     const { options, flowId } = await res1.json();
     const { startRegistration } = await import('https://esm.sh/@simplewebauthn/browser@13');
     const attResp = await startRegistration(options);
+    const passkeyLabel = suggestPasskeyLabel();
     const res2 = await fetch('/api/auth/register/verify', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ flowId, response: attResp })
+      body: JSON.stringify({ flowId, response: attResp, passkeyLabel })
     });
     if (!res2.ok) throw new Error('reg verify failed');
     return (await res2.json())?.user || null;
   } catch (e) {
     console.warn('register error', e);
+    return null;
+  }
+}
+
+async function addPasskey() {
+  try {
+    const res1 = await fetch('/api/auth/passkeys/options', { method: 'POST' });
+    if (!res1.ok) throw new Error('passkey options failed');
+    const { options, flowId } = await res1.json();
+    const { startRegistration } = await import('https://esm.sh/@simplewebauthn/browser@13');
+    const attResp = await startRegistration(options);
+    const suggested = suggestPasskeyLabel();
+    const input = prompt('Label this passkey:', suggested);
+    if (input === null) return null;
+    const passkeyLabel = (input || '').trim() || suggested;
+    const res2 = await fetch('/api/auth/passkeys/verify', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ flowId, response: attResp, passkeyLabel })
+    });
+    if (!res2.ok) throw new Error('passkey verify failed');
+    return (await res2.json())?.user || null;
+  } catch (e) {
+    console.warn('add passkey error', e);
     return null;
   }
 }
@@ -239,6 +263,68 @@ async function updateUsername(username) {
     const j = await res.json();
     return j?.user || null;
   } catch { return null; }
+}
+
+async function fetchPasskeys() {
+  try {
+    const res = await fetch('/api/auth/passkeys');
+    if (!res.ok) return { items: [], currentCredentialId: null };
+    const j = await res.json();
+    return {
+      items: Array.isArray(j.items) ? j.items : [],
+      currentCredentialId: j.currentCredentialId || null,
+    };
+  } catch { return { items: [], currentCredentialId: null }; }
+}
+
+async function deletePasskey(credentialId) {
+  try {
+    const res = await fetch('/api/auth/passkeys/delete', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ credentialId })
+    });
+    if (!res.ok) return { ok: false, error: await res.json().catch(() => null) };
+    const j = await res.json();
+    return { ok: true, items: j.items || [], currentCredentialId: j.currentCredentialId || null };
+  } catch {
+    return { ok: false, error: null };
+  }
+}
+
+async function renamePasskey(credentialId, label) {
+  try {
+    const res = await fetch('/api/auth/passkeys/label', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ credentialId, label })
+    });
+    if (!res.ok) return { ok: false, error: await res.json().catch(() => null) };
+    const j = await res.json();
+    return { ok: true, items: j.items || [], currentCredentialId: j.currentCredentialId || null };
+  } catch {
+    return { ok: false, error: null };
+  }
+}
+
+function suggestPasskeyLabel() {
+  const ua = navigator.userAgent || '';
+  const platform = navigator.userAgentData?.platform || navigator.platform || '';
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const isIpad = /iPad/i.test(ua);
+  const isIphone = /iPhone/i.test(ua);
+  const isAndroid = /Android/i.test(ua);
+  const isWindows = /Win/i.test(platform);
+  const isMac = /Mac/i.test(platform) && !isIOS;
+  const isChromeOS = /CrOS/i.test(ua);
+  let device = 'Device';
+  if (isIphone) device = 'iPhone';
+  else if (isIpad) device = 'iPad';
+  else if (isIOS) device = 'iOS device';
+  else if (isAndroid) device = /Mobile/i.test(ua) ? 'Android phone' : 'Android device';
+  else if (isMac) device = 'Mac';
+  else if (isWindows) device = 'Windows PC';
+  else if (isChromeOS) device = 'Chromebook';
+  const day = new Date().toISOString().slice(0, 10);
+  return `${device} (${day})`;
 }
 
 // Generate friendly display names like "Blue Dragon"
@@ -308,15 +394,105 @@ function angleDelta(a, b) {
 
 window.addEventListener("DOMContentLoaded", async () => {
   // Session/auth state and UI
-  const uiUser = { name: qs('userName'), btnEdit: qs('btnEditName'), btnReg: qs('btnRegister'), btnLogin: qs('btnLogin'), btnLogout: qs('btnLogout'), hint: qs('authHint') };
+  const uiUser = { name: qs('userName'), btnEdit: qs('btnEditName'), btnReg: qs('btnRegister'), btnLogin: qs('btnLogin'), btnAddPasskey: qs('btnAddPasskey'), btnLogout: qs('btnLogout'), hint: qs('authHint'), passkeyList: qs('passkeyList') };
   const authToast = { el: qs('authToast'), btnLogin: qs('toastLogin'), btnRegister: qs('toastRegister'), btnClose: qs('toastClose') };
   let sessionUser = await getSession();
+  let passkeyItems = [];
+  let passkeyCurrentId = null;
+  const renderPasskeys = () => {
+    if (!uiUser.passkeyList) return;
+    if (!sessionUser) {
+      uiUser.passkeyList.textContent = '—';
+      return;
+    }
+    if (!passkeyItems.length) {
+      uiUser.passkeyList.textContent = 'none';
+      return;
+    }
+    uiUser.passkeyList.innerHTML = '';
+    passkeyItems.forEach((item, index) => {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.justifyContent = 'space-between';
+      row.style.alignItems = 'center';
+      row.style.gap = '.5rem';
+      row.style.margin = '.2rem 0';
+      const currentLabel = item.label ? item.label : `Passkey ${index + 1}`;
+      const left = document.createElement('div');
+      left.style.display = 'flex';
+      left.style.alignItems = 'center';
+      left.style.gap = '.35rem';
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.gap = '.35rem';
+      const btnRename = document.createElement('button');
+      btnRename.className = 'ghost small btn-edit';
+      btnRename.textContent = 'Edit';
+      btnRename.title = 'Edit passkey label';
+      btnRename.setAttribute('aria-label', 'Rename passkey');
+      btnRename.addEventListener('click', async () => {
+        const next = prompt('Rename passkey:', currentLabel);
+        if (next === null) return;
+        const trimmed = (next || '').trim();
+        if (!trimmed) return;
+        const res = await renamePasskey(item.id, trimmed);
+        if (!res.ok) {
+          alert(res.error?.error || 'Failed to rename passkey.');
+          return;
+        }
+        passkeyItems = res.items || [];
+        passkeyCurrentId = res.currentCredentialId || null;
+        renderPasskeys();
+      });
+      const label = document.createElement('span');
+      label.textContent = currentLabel;
+      const btnRemove = document.createElement('button');
+      btnRemove.className = 'ghost small icon';
+      btnRemove.textContent = '🗑';
+      btnRemove.title = 'Remove passkey';
+      btnRemove.setAttribute('aria-label', 'Remove passkey');
+      btnRemove.addEventListener('click', async () => {
+        const isCurrent = item.id && passkeyCurrentId && item.id === passkeyCurrentId;
+        const message = isCurrent
+          ? 'WARN: This is the passkey CURRENTLY USED. Remove anyway?'
+          : 'Remove this passkey?';
+        if (!confirm(message)) return;
+        const res = await deletePasskey(item.id);
+        if (!res.ok) {
+          alert(res.error?.error || 'Failed to remove passkey.');
+          return;
+        }
+        passkeyItems = res.items || [];
+        passkeyCurrentId = res.currentCredentialId || null;
+        renderPasskeys();
+      });
+      left.appendChild(label);
+      left.appendChild(btnRename);
+      actions.appendChild(btnRemove);
+      row.appendChild(left);
+      row.appendChild(actions);
+      uiUser.passkeyList.appendChild(row);
+    });
+  };
+  const refreshPasskeys = async () => {
+    if (!sessionUser) {
+      passkeyItems = [];
+      passkeyCurrentId = null;
+      renderPasskeys();
+      return;
+    }
+    const res = await fetchPasskeys();
+    passkeyItems = res.items || [];
+    passkeyCurrentId = res.currentCredentialId || null;
+    renderPasskeys();
+  };
   const updateUserUI = () => {
     if (sessionUser) {
       uiUser.name.textContent = sessionUser.username || 'Runner';
       uiUser.btnReg.style.display = 'none';
       if (uiUser.btnEdit) uiUser.btnEdit.style.display = '';
       uiUser.btnLogin.style.display = 'none';
+      if (uiUser.btnAddPasskey) uiUser.btnAddPasskey.style.display = '';
       uiUser.btnLogout.style.display = '';
       uiUser.hint.style.display = 'none';
       if (authToast.el) authToast.el.style.display = 'none';
@@ -325,10 +501,12 @@ window.addEventListener("DOMContentLoaded", async () => {
       uiUser.btnReg.style.display = '';
       if (uiUser.btnEdit) uiUser.btnEdit.style.display = 'none';
       uiUser.btnLogin.style.display = '';
+      if (uiUser.btnAddPasskey) uiUser.btnAddPasskey.style.display = 'none';
       uiUser.btnLogout.style.display = 'none';
       uiUser.hint.style.display = '';
       if (authToast.el) authToast.el.style.display = 'block';
     }
+    renderPasskeys();
   };
   updateUserUI();
 
@@ -375,11 +553,27 @@ window.addEventListener("DOMContentLoaded", async () => {
       sessionUser = user;
       updateUserUI();
       await afterLogin();
+      await refreshPasskeys();
     }
   };
   const doLogin = async () => {
     const user = await loginWithPasskey();
-    if (user) { sessionUser = user; updateUserUI(); await afterLogin(); }
+    if (user) {
+      sessionUser = user;
+      updateUserUI();
+      await afterLogin();
+      await refreshPasskeys();
+    }
+  };
+  const doAddPasskey = async () => {
+    if (!sessionUser) return;
+    const user = await addPasskey();
+    if (user) {
+      sessionUser = user;
+      updateUserUI();
+      await refreshPasskeys();
+      alert('Passkey added to your account.');
+    }
   };
   const doLogout = async () => {
     const pos = captureCurrentPosition();
@@ -391,6 +585,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   };
   uiUser.btnReg?.addEventListener('click', doRegister);
   uiUser.btnLogin?.addEventListener('click', doLogin);
+  uiUser.btnAddPasskey?.addEventListener('click', doAddPasskey);
   uiUser.btnLogout?.addEventListener('click', doLogout);
   uiUser.btnEdit?.addEventListener('click', async () => {
     if (!sessionUser) return;
@@ -705,6 +900,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     } catch {}
   }
   if (sessionUser) await loadHistoryAndMarkers();
+  if (sessionUser) await refreshPasskeys();
   // Side pane toggle: hidden by default; show with side-open on all screens
   ui.togglePane.addEventListener('click', () => {
     document.body.classList.toggle('side-open');

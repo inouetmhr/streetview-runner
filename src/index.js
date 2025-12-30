@@ -185,12 +185,14 @@ async function handleApi(request, env, url) {
         expectedChallenge: flow.challenge,
         expectedOrigin,
         expectedRPID: rpID,
+        requireUserVerification: false,
       });
       if (!verification.verified) return json({ error: "verification failed" }, 400);
       const { registrationInfo } = verification;
       if (!registrationInfo || !registrationInfo.credential.id || !registrationInfo.credential.publicKey) {
         return json({ error: "invalid registration info" }, 400);
       }
+      const passkeyLabel = sanitizePasskeyLabel(body.passkeyLabel);
       const credentialID = registrationInfo.credential.id;
       const credentialPublicKey = toBase64URL(registrationInfo.credential.publicKey);
       const counter = registrationInfo.credential.counter || 0;
@@ -199,7 +201,7 @@ async function handleApi(request, env, url) {
         userId: flow.userId,
         username: flow.username,
         createdAt: Date.now(),
-        credentials: [ { id: credentialID, publicKey: credentialPublicKey, counter, transports: registrationInfo.transports || undefined } ],
+        credentials: [ { id: credentialID, publicKey: credentialPublicKey, counter, transports: registrationInfo.transports || undefined, label: passkeyLabel || undefined } ],
       };
       console.log("New user registered:", user);
       await putKV(env, userKey(user.userId), user);
@@ -207,12 +209,165 @@ async function handleApi(request, env, url) {
       // Delete used flow
       await delKV(env, regChallengeKey(String(body.flowId)));
       // Create session
-      const { token, cookie } = await createSession(env, user.userId);
+      const { token, cookie } = await createSession(env, user.userId, credentialID);
       return json({ ok: true, user: { userId: user.userId, username: user.username } }, 200, { "Set-Cookie": cookie });
     } catch (e) {
       console.error("reg verify error", e);
       return json({ error: "verification error" }, 400);
     }
+  }
+
+  if (pathname === "/api/auth/passkeys/options") {
+    if (request.method !== "POST") return json({ error: "method not allowed" }, 405, { Allow: "POST" });
+    if (!originOk(request, url)) return json({ error: "bad origin" }, 400);
+    const userId = await getSessionUserId(request, env);
+    if (!userId) return json({ error: "unauthorized" }, 401);
+    const user = await getUser(env, userId);
+    if (!user) return json({ error: "unknown user" }, 404);
+    const rpID = url.hostname;
+    const excludeCredentials = (user.credentials || [])
+      .map((cred) => {
+        const idStr = normalizeCredentialIdString(cred.id);
+        if (!idStr) return null;
+        return {
+          id: idStr,
+          type: "public-key",
+          transports: cred.transports || undefined,
+        };
+      })
+      .filter(Boolean);
+    const options = await generateRegistrationOptions({
+      rpName: "Street View Runner",
+      rpID,
+      userName: user.username || "Runner",
+      userID: utf8ToBytes(user.userId),
+      attestationType: "none",
+      authenticatorSelection: { residentKey: "required", userVerification: "preferred" },
+      excludeCredentials,
+    });
+    const flowId = randomToken();
+    await putKV(env, passkeyAddChallengeKey(flowId), { challenge: options.challenge, userId, createdAt: Date.now() }, { expirationTtl: 600 });
+    return json({ ok: true, options, flowId });
+  }
+
+  if (pathname === "/api/auth/passkeys/verify") {
+    if (request.method !== "POST") return json({ error: "method not allowed" }, 405, { Allow: "POST" });
+    if (!originOk(request, url)) return json({ error: "bad origin" }, 400);
+    const sessionUserId = await getSessionUserId(request, env);
+    if (!sessionUserId) return json({ error: "unauthorized" }, 401);
+    const body = await safeJson(request);
+    if (!body || !body.flowId || !body.response) return json({ error: "invalid json" }, 400);
+    const flow = await getKV(env, passkeyAddChallengeKey(String(body.flowId)));
+    if (!flow) return json({ error: "invalid flow" }, 400);
+    if (flow.userId !== sessionUserId) return json({ error: "invalid session" }, 400);
+    const rpID = url.hostname;
+    const expectedOrigin = url.origin;
+    try {
+      const verification = await verifyRegistrationResponse({
+        response: body.response,
+        expectedChallenge: flow.challenge,
+        expectedOrigin,
+        expectedRPID: rpID,
+        requireUserVerification: false,
+      });
+      if (!verification.verified) return json({ error: "verification failed" }, 400);
+      const { registrationInfo } = verification;
+      if (!registrationInfo || !registrationInfo.credential.id || !registrationInfo.credential.publicKey) {
+        return json({ error: "invalid registration info" }, 400);
+      }
+      const passkeyLabel = sanitizePasskeyLabel(body.passkeyLabel);
+      const user = await getUser(env, sessionUserId);
+      if (!user) return json({ error: "unknown user" }, 404);
+      const credentialID = registrationInfo.credential.id;
+      if ((user.credentials || []).some((cred) => cred.id === credentialID)) {
+        return json({ error: "credential already registered" }, 400);
+      }
+      const credentialPublicKey = toBase64URL(registrationInfo.credential.publicKey);
+      const counter = registrationInfo.credential.counter || 0;
+      user.credentials = user.credentials || [];
+      user.credentials.push({
+        id: credentialID,
+        publicKey: credentialPublicKey,
+        counter,
+        transports: registrationInfo.transports || undefined,
+        label: passkeyLabel || undefined,
+      });
+      await putKV(env, userKey(user.userId), user);
+      await putKV(env, credKey(credentialID), { userId: user.userId });
+      await delKV(env, passkeyAddChallengeKey(String(body.flowId)));
+      return json({ ok: true, user: { userId: user.userId, username: user.username } });
+    } catch (e) {
+      console.error("passkey add verify error", e);
+      return json({ error: "verification error" }, 400);
+    }
+  }
+
+  if (pathname === "/api/auth/passkeys") {
+    if (request.method !== "GET") return json({ error: "method not allowed" }, 405, { Allow: "GET" });
+    const userId = await getSessionUserId(request, env);
+    if (!userId) return json({ error: "unauthorized" }, 401);
+    const user = await getUser(env, userId);
+    if (!user) return json({ error: "unknown user" }, 404);
+    const items = (user.credentials || []).map((cred) => ({
+      id: normalizeCredentialIdString(cred.id),
+      transports: cred.transports || undefined,
+      label: cred.label || undefined,
+    }));
+    const sess = await getSession(request, env);
+    return json({ ok: true, items, currentCredentialId: normalizeCredentialIdString(sess?.credentialId) || null });
+  }
+
+  if (pathname === "/api/auth/passkeys/delete") {
+    if (request.method !== "POST") return json({ error: "method not allowed" }, 405, { Allow: "POST" });
+    if (!originOk(request, url)) return json({ error: "bad origin" }, 400);
+    const userId = await getSessionUserId(request, env);
+    if (!userId) return json({ error: "unauthorized" }, 401);
+    const body = await safeJson(request);
+    const credentialId = String(body?.credentialId || "");
+    if (!credentialId) return json({ error: "missing credential id" }, 400);
+    const user = await getUser(env, userId);
+    if (!user) return json({ error: "unknown user" }, 404);
+    const creds = Array.isArray(user.credentials) ? user.credentials : [];
+    if (creds.length <= 1) return json({ error: "last passkey cannot be removed" }, 400);
+    const next = creds.filter((cred) => normalizeCredentialIdString(cred.id) !== credentialId);
+    if (next.length === creds.length) return json({ error: "credential not found" }, 404);
+    user.credentials = next;
+    await putKV(env, userKey(user.userId), user);
+    await delKV(env, credKey(credentialId));
+    const sess = await getSession(request, env);
+    return json({
+      ok: true,
+      items: next.map((cred) => ({ id: normalizeCredentialIdString(cred.id), transports: cred.transports || undefined, label: cred.label || undefined })),
+      currentCredentialId: normalizeCredentialIdString(sess?.credentialId) || null,
+    });
+  }
+
+  if (pathname === "/api/auth/passkeys/label") {
+    if (request.method !== "POST") return json({ error: "method not allowed" }, 405, { Allow: "POST" });
+    if (!originOk(request, url)) return json({ error: "bad origin" }, 400);
+    const userId = await getSessionUserId(request, env);
+    if (!userId) return json({ error: "unauthorized" }, 401);
+    const body = await safeJson(request);
+    const credentialId = String(body?.credentialId || "");
+    const label = sanitizePasskeyLabel(body?.label);
+    if (!credentialId) return json({ error: "missing credential id" }, 400);
+    if (!label) return json({ error: "invalid label" }, 400);
+    const user = await getUser(env, userId);
+    if (!user) return json({ error: "unknown user" }, 404);
+    const creds = Array.isArray(user.credentials) ? user.credentials : [];
+    const target = creds.find((cred) => normalizeCredentialIdString(cred.id) === credentialId);
+    if (!target) return json({ error: "credential not found" }, 404);
+    target.label = label;
+    await putKV(env, userKey(user.userId), user);
+    return json({
+      ok: true,
+      items: creds.map((cred) => ({
+        id: normalizeCredentialIdString(cred.id),
+        transports: cred.transports || undefined,
+        label: cred.label || undefined,
+      })),
+      currentCredentialId: normalizeCredentialIdString((await getSession(request, env))?.credentialId) || null,
+    });
   }
 
   if (pathname === "/api/auth/login/options") {
@@ -248,7 +403,7 @@ async function handleApi(request, env, url) {
       if (!userId) return json({ error: "unknown credential" }, 400);
       const user = await getUser(env, userId.userId);
       if (!user) return json({ error: "unknown user" }, 400);
-      const cred = (user.credentials || []).find(c => c.id === credentialId);
+      const cred = (user.credentials || []).find(c => normalizeCredentialIdString(c.id) === credentialId);
       if (!cred) return json({ error: "credential not linked" }, 400);
       const credential = {
         id: cred.id,
@@ -269,7 +424,7 @@ async function handleApi(request, env, url) {
       cred.counter = authenticationInfo.newCounter || cred.counter;
       await putKV(env, userKey(user.userId), user);
       await delKV(env, authFlowKey(String(body.flowId)));
-      const { token, cookie } = await createSession(env, user.userId);
+      const { token, cookie } = await createSession(env, user.userId, credentialId);
       return json({ ok: true, user: { userId: user.userId, username: user.username } }, 200, { "Set-Cookie": cookie });
     } catch (e) {
       console.error("auth verify error", e);
@@ -357,16 +512,20 @@ function today() { return new Date().toISOString().slice(0, 10); }
 const SESSION_COOKIE_NAME = "svr_session";
 
 async function getSessionUserId(request, env) {
-  const token = getCookie(request, SESSION_COOKIE_NAME);
-  if (!token) return null;
-  const sess = await getKV(env, sessionKey(token));
+  const sess = await getSession(request, env);
   return sess?.userId || null;
 }
 
-async function createSession(env, userId) {
+async function getSession(request, env) {
+  const token = getCookie(request, SESSION_COOKIE_NAME);
+  if (!token) return null;
+  return await getKV(env, sessionKey(token));
+}
+
+async function createSession(env, userId, credentialId) {
   const token = randomToken();
   const now = Date.now();
-  await putKV(env, sessionKey(token), { userId, createdAt: now });
+  await putKV(env, sessionKey(token), { userId, credentialId: credentialId || null, createdAt: now });
   const maxAge = 60 * 60 * 24 * 365; // ~1y
   const cookie = `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
   return { token, cookie };
@@ -402,6 +561,11 @@ function sanitizeUsername(s) {
   return t || "Runner";
 }
 
+function sanitizePasskeyLabel(s) {
+  const t = String(s || "").trim().slice(0, 64);
+  return t || null;
+}
+
 function generateUsername() {
   return "Runner-" + randomToken(6);
 }
@@ -409,6 +573,7 @@ function generateUsername() {
 function userKey(userId) { return `user:v1:${userId}`; }
 function credKey(credId) { return `cred:v1:${credId}`; }
 function regChallengeKey(flowId) { return `challenge:v1:reg:${flowId}`; }
+function passkeyAddChallengeKey(flowId) { return `challenge:v1:passkey:${flowId}`; }
 function authFlowKey(flowId) { return `challenge:v1:auth:${flowId}`; }
 function sessionKey(token) { return `sess:v1:${token}`; }
 
@@ -473,6 +638,15 @@ function fromBase64URL(s) {
   const a = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
   return a;
+}
+
+function normalizeCredentialIdString(id) {
+  if (typeof id === "string") return id;
+  if (id instanceof ArrayBuffer) return toBase64URL(new Uint8Array(id));
+  if (ArrayBuffer.isView(id)) {
+    return toBase64URL(new Uint8Array(id.buffer, id.byteOffset, id.byteLength));
+  }
+  return "";
 }
 
 function utf8ToBytes(s) {

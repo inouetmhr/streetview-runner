@@ -22,6 +22,8 @@
       input, button, select { padding: .5rem .6rem; border:1px solid #d1d5db; border-radius: .375rem; }
       button { cursor:pointer; background:#111827; color:white; border-color:#111827; }
       button.ghost { background:white; color:#111827; }
+      button.icon { padding: .2rem .45rem; line-height: 1; }
+      .section-header { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
       .muted { color:#6b7280; }
       .kvs { display:grid; grid-template-columns: auto 1fr; gap:.25rem .75rem; align-items:center; }
       .section { margin: 1rem 0; }
@@ -32,7 +34,7 @@
       body.side-open main { grid-template-columns: 1fr minmax(240px, 26vw); }
       body.side-open #side { display: block; position: static; box-shadow: none; }
       .meters { display:flex; align-items:center; gap:.25rem; }
-      #btnEditName { font-size: .75rem; padding: .2rem .45rem; margin-left: .5rem; border-radius: .25rem; border-color: #d1d5db; color: #374151; }
+      .btn-edit { font-size: .75rem; padding: .2rem .45rem; margin-left: .5rem; border-radius: .25rem; border-color: #d1d5db; color: #374151; }
 
       /* Responsive side panel: hide on small screens, show as overlay when toggled */
       @media (max-width: 900px) {
@@ -74,14 +76,19 @@
       </div>
       <aside id="side">
         <div class="section">
-          <h3>User</h3>
-          <div class="kvs small">
-            <div class="muted">Name:</div><div><span id="userName">—</span> <button id="btnEditName" class="ghost small">Edit</button></div>
+          <div class="section-header">
+            <h3>User</h3>
+            <button id="btnLogout" class="ghost small" style="display:none;">Logout</button>
           </div>
+          <div class="kvs small">
+            <div class="muted">Name:</div><div><span id="userName">—</span> <button id="btnEditName" class="ghost small btn-edit">Edit</button></div>
+          </div>
+          <div class="small muted" style="margin-top:.5rem;">Passkeys:</div>
+          <div id="passkeyList" class="small" style="margin:.25rem 0 .5rem 0;"></div>
           <div class="controls" style="margin-top:.5rem;">
             <button id="btnRegister" class="ghost">Register</button>
             <button id="btnLogin" class="ghost">Login</button>
-            <button id="btnLogout" style="display:none;">Logout</button>
+            <button id="btnAddPasskey" class="ghost" style="display:none;">Add passkey</button>
           </div>
           <div id="authHint" class="small muted" style="margin-top:.5rem; display:none;">Sign in to save your ride.</div>
         </div>

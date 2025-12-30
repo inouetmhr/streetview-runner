@@ -41,6 +41,11 @@
   - GET `/api/auth/session` → `{ ok:true, user:{ userId, username } }` or 401 when no valid session.
   - POST `/api/auth/register/options` → returns `{ ok:true, options, flowId }`. Server generates `userId` and uses byte `userID` for WebAuthn.
   - POST `/api/auth/register/verify` → body `{ flowId, response }`; verifies attestation; creates user + credential; sets `svr_session` cookie; returns `{ ok:true, user:{ userId, username } }`.
+  - POST `/api/auth/passkeys/options` → returns `{ ok:true, options, flowId }`. Requires session; creates registration options to add a credential.
+  - POST `/api/auth/passkeys/verify` → body `{ flowId, response }`; verifies attestation; adds credential to existing user; returns `{ ok:true, user:{ userId, username } }`.
+  - GET `/api/auth/passkeys` → returns `{ ok:true, items:[{ id, transports?, label? }], currentCredentialId }`. Requires session; `currentCredentialId` comes from the current session.
+  - POST `/api/auth/passkeys/delete` → body `{ credentialId }`; removes a credential; returns `{ ok:true, items:[...], currentCredentialId }`. Rejects when attempting to delete the last passkey.
+  - POST `/api/auth/passkeys/label` → body `{ credentialId, label }`; updates a credential label; returns `{ ok:true, items:[...], currentCredentialId }`.
   - POST `/api/auth/login/options` → returns `{ ok:true, options, flowId }` (resident/discoverable; empty `allowCredentials`).
   - POST `/api/auth/login/verify` → body `{ flowId, response }`; verifies assertion; updates counter; sets `svr_session` cookie; returns `{ ok:true, user:{ userId, username } }`.
   - POST `/api/auth/username` → body `{ username:string }`; updates display name; returns `{ ok:true, user:{ userId, username } }`.
@@ -63,7 +68,7 @@ Notes:
   - It shows s speed meter (km/h) and and an odometer (km) which shows traveled distance for the day.
   - BLE connect button is shown when and only no BLE device is connected. 
 - Side Pane: following elements are show in a pane that is collapsible and hidden in default.
-  - User info: user name with an Edit button, register/login/logout controls.
+  - User info: user name with an Edit button, register/login/add-passkey controls; Logout is shown on the User header.
   - Status: Device name, active service, connection status; sensor metrics: speed (km/h), cadence (rpm), distance (m).
 - Interactions: choose forward link closest to current heading;  auto‑align POV to link heading when turn >45°.
 - "Turn!" notify toast and beep to request the user to choose direction.
@@ -77,11 +82,11 @@ Notes:
     - Index: `(user_id, day, ts)`
 
 ### Auth Keys (KV)
-- `user:v1:{userId}` → `{ userId, username, createdAt, credentials: Array<{ id, publicKey, counter, transports? }> }`
+- `user:v1:{userId}` → `{ userId, username, createdAt, credentials: Array<{ id, publicKey, counter, transports?, label? }> }` (labels default to device name + registration date; user editable)
 - `cred:v1:{credentialId}` → `{ userId }` (lookup by credential ID)
 - `challenge:v1:reg:{flowId}` → `{ challenge, userId, username, createdAt }` (ephemeral; TTL ~10m)
 - `challenge:v1:auth:{flowId}` → `{ challenge, createdAt }` (ephemeral; TTL ~10m)
-- `sess:v1:{token}` → `{ userId, createdAt }` (long‑lived; no TTL or 1y)
+- `sess:v1:{token}` → `{ userId, credentialId?, createdAt }` (long‑lived; no TTL or 1y)
 
 ## Behavior
 - On auth (startup)
@@ -163,7 +168,6 @@ Notes:
 ## TODO (tobe implemented in the future)
 - 日、週、月の単位で hisotry を見る画面を作る
   - (option) それぞれの移動距離も表示する
-- 同じアカウントで別のdevice (passkey) を登録できるようにする
 
 ## Rollout / Backout
 - nothing now.
