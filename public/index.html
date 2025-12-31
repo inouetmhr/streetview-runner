@@ -3,32 +3,44 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Street View Walkthrough</title>
+    <title>Street View Runner</title>
     <style>
       html, body { height: 100%; }
-      body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color: #111827; }
-      header { padding: .75rem 1rem; border-bottom: 1px solid #e5e7eb; display:grid; grid-template-columns: 1fr auto 1fr; align-items:center; gap:1rem; }
+      body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color: #111827; display: flex; flex-direction: column; min-height: 100%; }
+      header { display: none; }
       header h1 { margin: 0; font-size: 1rem; font-weight: 600; }
+      header .left { display:flex; align-items:center; gap:.5rem; }
       header .right { display:flex; gap:.5rem; align-items:center; justify-self: end; min-width: 0; }
-      main { display: grid; grid-template-columns: 1fr; gap: 0; height: calc(100% - 3rem); }
-      #panoWrap { position: relative; width: 100%; height: 100%; }
+      main { display: grid; grid-template-columns: 1fr; grid-template-areas: "pano"; gap: 0; flex: 1; min-height: 0; height: 100%; }
+      #panoWrap { position: relative; width: 100%; height: 100%; min-height: 0; grid-area: pano; }
       #pano { width: 100%; height: 100%; }
       #historyMap { position: absolute; inset: 0; display: none; }
       #miniMap { position: absolute; right: 12px; top: 12px; width: 200px; height: 170px; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,.15); background: #fff; z-index: 10; }
+      #hudBar { position:absolute; left:50%; top:12px; transform:translateX(-50%); display:flex; flex-direction: column; gap:.25rem; align-items:center; padding:.45rem .9rem; background:rgba(17,24,39,.72); color:#f9fafb; border-radius:18px; box-shadow: 0 8px 20px rgba(0,0,0,.25); z-index: 12; backdrop-filter: blur(6px); }
+      #hudBar .hud-title { font-size:.7rem; letter-spacing:.28rem; text-transform: uppercase; opacity:.9; white-space: nowrap; transition: opacity .2s ease, transform .2s ease, max-height .2s ease, margin .2s ease; max-height: 16px; }
+      #hudBar.compact .hud-title { opacity:0; transform:scale(.9); max-height:0; margin:0; }
+      #hudBar .hud-row { display:flex; gap:.75rem; align-items:center; }
+      #hudBar .meter { display:flex; align-items:baseline; gap:.35rem; font-size:.9rem; letter-spacing:.2px; }
+      #hudBar .value { font-weight: 700; font-variant-numeric: tabular-nums; }
+      #hudBar .unit { font-size:.78rem; opacity:.85; }
       #turnToast { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); background:#dc2626; color:white; padding: 1rem 1.5rem; border-radius:.5rem; font-size: 2rem; display:none; z-index: 11; box-shadow: 0 6px 18px rgba(220,38,38,.4); pointer-events: none; }
-      #authToast { position: fixed; left: 50%; top: calc(3rem + 8px); transform: translateX(-50%); background:#111827; color:white; padding: .75rem 1rem; border-radius: .5rem; display:none; z-index: 60; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+      #tapZone { position:absolute; left:50%; bottom:calc(12px + env(safe-area-inset-bottom)); transform:translateX(-50%); width:min(520px, 88vw); height:56px; background:rgba(17,24,39,.85); color:white; border-radius: 28px; display:none; align-items:center; justify-content:center; gap:.5rem; font-size:.95rem; z-index: 12; box-shadow: 0 8px 20px rgba(0,0,0,.2); user-select:none; touch-action: manipulation; }
+      #tapZone .hint { opacity:.85; font-size:.8rem; }
+      #authToast { position: fixed; left: 50%; top: 72px; transform: translateX(-50%); background:#dbeafe; color:#1e3a8a; padding: .75rem 1rem; border-radius: .5rem; display:none; z-index: 60; box-shadow: 0 6px 18px rgba(30,58,138,.2); }
       #authToast .actions { display:inline-flex; gap:.5rem; margin-left:.75rem; }
-      #side { display:none; border-left: 1px solid #e5e7eb; padding: 1rem; overflow: auto; }
+      body.auth-visible #authToast { display: block; }
+      body.tapzone-visible #tapZone { display: flex; }
+      #side { display:none; border-right: 1px solid #bfdbfe; padding: 52px .75rem .75rem; overflow: auto; min-height: 0; height: 100%; grid-area: side; background: #eff6ff; }
       .controls { display:flex; gap:.5rem; margin:.5rem 0; flex-wrap:wrap; }
       input, button, select { padding: .5rem .6rem; border:1px solid #d1d5db; border-radius: .375rem; }
       button { cursor:pointer; background:#111827; color:white; border-color:#111827; }
       button.ghost { background:white; color:#111827; }
       button.icon { padding: .2rem .45rem; line-height: 1; }
-      .section-header { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+      .section-header { display:flex; align-items:center; justify-content:space-between; gap:.4rem; }
       .muted { color:#6b7280; }
       .kvs { display:grid; grid-template-columns: auto 1fr; gap:.25rem .75rem; align-items:center; }
-      .section { margin: 1rem 0; }
-      .small { font-size: .875rem; }
+      .section { margin: .4rem 0; }
+      .small { font-size: .82rem; }
       .range { width: 100%; }
       .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; }
       .mode-btn.active { background:#111827; color:white; border-color:#111827; }
@@ -40,43 +52,70 @@
       body.history-open #miniMap { display: none; }
       body.history-open #turnToast { display: none; }
       body.history-open #historyMap { display: block; }
+      body.history-open #tapZone { display: none; }
+      body.history-open #hudBar { display: none; }
+      body.history-open #authToast { display: none; }
       /* Wide screen: show side when opened */
-      body.side-open main { grid-template-columns: 1fr minmax(240px, 26vw); }
+      body.side-open main { grid-template-columns: minmax(240px, 26vw) 1fr; grid-template-areas: "side pano"; }
       body.side-open #side { display: block; position: static; box-shadow: none; }
       .meters { display:flex; align-items:center; gap:.25rem; }
       .btn-edit { font-size: .75rem; padding: .2rem .45rem; margin-left: .5rem; border-radius: .25rem; border-color: #d1d5db; color: #374151; }
       button.ghost.icon { border-color: #d1d5db; }
+      .float-controls { position: absolute; top: 12px; z-index: 70; display:flex; align-items:center; gap:.5rem; }
+      .float-left { left: 60px; }
+      .float-right { right: 12px; }
+      .global-menu { position: fixed; top: 12px; left: 12px; z-index: 90; display:flex; align-items:center; gap:.5rem; }
+      .float-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: rgba(15,23,42,.9); color:#f8fafc; font-weight:700; box-shadow: 0 8px 18px rgba(0,0,0,.28); display:flex; align-items:center; justify-content:center; }
+      .float-btn:hover { filter: brightness(0.98); }
+      .float-connect { padding: .45rem .85rem; border-radius: 999px; border: none; background: #fbbf24; color:#111827; font-weight: 700; box-shadow: 0 6px 16px rgba(0,0,0,.2); display: inline-flex; align-items: center; }
+      .float-connect::before { content: "ᛒ"; display: inline-block; margin-right: .25rem; font-size: 1rem; }
 
       /* Responsive side panel: hide on small screens, show as overlay when toggled */
       @media (max-width: 900px) {
         main { grid-template-columns: 1fr; }
         #side { display: none; }
         body.side-open main { grid-template-columns: 1fr; }
-        body.side-open #side { display: block; position: fixed; top: 3rem; right: 0; bottom: 0; width: min(88vw, 320px); background: #fff; box-shadow: -6px 0 18px rgba(0,0,0,.2); border-left: 1px solid #e5e7eb; z-index: 50; overflow: auto; }
+        body.side-open #side { display: block; position: fixed; top: 0; left: 0; bottom: 0; width: min(88vw, 320px); background: #eff6ff; box-shadow: 6px 0 18px rgba(30,58,138,.18); border-right: 1px solid #bfdbfe; z-index: 50; overflow: auto; padding-top: 52px; }
+      }
+      @media (max-width: 640px) {
+        #authToast { top: auto; bottom: calc(84px + env(safe-area-inset-bottom)); }
+        .global-menu { flex-direction: column; align-items: flex-start; }
+        .global-menu .float-connect { margin-left: 2px; }
+        .float-connect { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0; }
+        .float-connect::before { margin-right: 0; font-size: 1.1rem; }
+        body.side-open #connectBtn { display: none; }
       }
     </style>
   </head>
   <body>
-    <header>
-      <div class="left"><h1>Street View Runner</h1></div>
-      <div class="center"><button id="connectBtn">Connect Device</button></div>
-      <div class="right">
-        <div class="meters small">
-          <span class="muted">Speed:</span>
-          <span id="hdrSpeed">0.0</span><span class="muted"> km/h</span>
-          <span style="margin:0 .5rem;">|</span>
-          <span class="muted">Today:</span>
-          <span id="hdrDayKm">0.0</span><span class="muted"> km</span>
-        </div>
-        <button id="togglePane" class="ghost" title="Toggle side pane">☰</button>
-      </div>
-    </header>
     <main>
       <div id="panoWrap">
         <div id="pano"></div>
         <div id="historyMap" aria-label="History map"></div>
         <div id="miniMap" aria-label="Mini map"></div>
+        <div class="global-menu">
+          <button id="togglePane" class="float-btn" title="Toggle side pane" aria-label="Open menu">☰</button>
+          <button id="connectBtn" class="float-connect" aria-label="Connect Sensor">Connect Sensor</button>
+        </div>
+        <div id="hudBar" aria-live="polite">
+          <div class="hud-title">Street View Runner</div>
+          <div class="hud-row">
+            <div class="meter">
+              <span class="label">Speed</span>
+              <span id="hdrSpeed" class="value">0.0</span>
+              <span class="unit">km/h</span>
+            </div>
+            <div class="meter">
+              <span class="label">Today</span>
+              <span id="hdrDayKm" class="value">0.0</span>
+              <span class="unit">km</span>
+            </div>
+          </div>
+        </div>
         <div id="turnToast" role="status" aria-live="polite">Turn!</div>
+        <div id="tapZone" role="button" aria-label="Tap to boost speed" tabindex="0">
+          Tap or hit space key to accelerate
+        </div>
         <div id="authToast" role="dialog" aria-live="polite">
           <span>Sign in to save your ride</span>
           <span class="actions">
@@ -130,7 +169,7 @@
           </div>
         </div>
         <div class="section">
-          <h3>Device</h3>
+          <h3>Sensor</h3>
           <div class="kvs small">
             <div class="muted">Device:</div><div id="deviceName">—</div>
             <div class="muted">Service:</div><div id="serviceName">—</div>

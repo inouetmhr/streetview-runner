@@ -67,16 +67,20 @@ Notes:
 ### UI
 - The main content is Street View Panorama by Google Maps, with overlaying mini map.
 - History view replaces the panorama with a full-size map showing a polyline for the selected period.
-- Top of the screen
-  - It shows s speed meter (km/h) and and an odometer (km) which shows traveled distance for the day.
-  - BLE connect button is shown when and only no BLE device is connected. 
-- Side Pane: following elements are show in a pane that is collapsible and hidden in default.
+- Overlay HUD (top-center on pano)
+  - Speed (km/h) and today’s distance (km) in a compact HUD bar.
+  - Title text ("Street View Runner") sits above the metrics and hides when speed becomes >0.
+- Controls
+  - Menu icon is fixed at the top-left and toggles the side pane.
+  - "Connect Sensor" button sits next to the menu icon; shown only when no BLE device is connected.
+  - Tap Zone is fixed near the bottom center; tapping or Space boosts virtual speed (hidden when BLE is connected).
+- Side Pane: following elements are show in a pane that is collapsible and hidden in default (slides in from the left).
   - User info: user name with an Edit button, register/login/add-passkey controls; Logout is shown on the User header.
   - History: day/week/month range selectors with previous/next controls; shows total distance and opens History view.
   - Device: Device name, active service, connection status; sensor metrics: speed (km/h), cadence (rpm), distance (m).
 - Interactions: choose forward link closest to current heading;  auto‑align POV to link heading when turn >45°.
 - "Turn!" notify toast and beep to request the user to choose direction.
- - Auth prompt: a small toast is shown below the header when logged out, prompting Register or Login; hides on successful auth.
+- Auth prompt: a small toast is shown near the top center when logged out, prompting Register or Login; hides on successful auth.
 
 ## Data Model / Storage (KV + D1)
 ### User data

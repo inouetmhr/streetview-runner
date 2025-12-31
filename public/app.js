@@ -407,6 +407,7 @@ function initMap(start) {
     pov: { heading: start?.heading ?? 165, pitch: 0 },
     zoom: 1,
     addressControl: true,
+    addressControlOptions: { position: google.maps.ControlPosition.LEFT_BOTTOM },
     motionTracking: true,
     fullscreenControl: false,
     linksControl: true,
@@ -452,6 +453,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const uiUser = { name: qs('userName'), btnEdit: qs('btnEditName'), btnReg: qs('btnRegister'), btnLogin: qs('btnLogin'), btnAddPasskey: qs('btnAddPasskey'), btnLogout: qs('btnLogout'), hint: qs('authHint'), passkeyList: qs('passkeyList') };
   const authToast = { el: qs('authToast'), btnLogin: qs('toastLogin'), btnRegister: qs('toastRegister'), btnClose: qs('toastClose') };
   let sessionUser = await getSession();
+  let isHistoryOpen = false;
   const dayString = () => new Date().toISOString().slice(0,10);
   let passkeyItems = [];
   let passkeyCurrentId = null;
@@ -551,7 +553,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       if (uiUser.btnAddPasskey) uiUser.btnAddPasskey.style.display = '';
       uiUser.btnLogout.style.display = '';
       uiUser.hint.style.display = 'none';
-      if (authToast.el) authToast.el.style.display = 'none';
+      setAuthToastVisible(false);
     } else {
       uiUser.name.textContent = '—';
       uiUser.btnReg.style.display = '';
@@ -560,7 +562,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       if (uiUser.btnAddPasskey) uiUser.btnAddPasskey.style.display = 'none';
       uiUser.btnLogout.style.display = 'none';
       uiUser.hint.style.display = '';
-      if (authToast.el) authToast.el.style.display = 'block';
+      setAuthToastVisible(true);
     }
     renderPasskeys();
   };
@@ -681,7 +683,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Toast actions mirror side-pane buttons
   authToast.btnRegister?.addEventListener('click', doRegister);
   authToast.btnLogin?.addEventListener('click', doLogin);
-  authToast.btnClose?.addEventListener('click', () => { if (authToast.el) authToast.el.style.display = 'none'; });
+  authToast.btnClose?.addEventListener('click', () => { setAuthToastVisible(false); });
 
   // Map init: prefer local last position; fall back to status if logged in
   const localStart = loadLastPositionFor(sessionUser?.userId);
@@ -883,6 +885,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   function setHistoryOpen(open) {
     if (!historyUI.body || !historyUI.toggle) return;
+    isHistoryOpen = open;
     historyUI.body.classList.toggle("open", open);
     historyUI.toggle.textContent = open ? "Close" : "Open";
     historyUI.toggle.setAttribute("aria-expanded", open ? "true" : "false");
@@ -894,6 +897,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       }
       refreshHistoryView();
     }
+    setAuthToastVisible(!sessionUser);
+    setTapZoneVisible(!walker.activeService);
   }
 
   function renderMetrics(metrics, ble) {
@@ -909,6 +914,12 @@ window.addEventListener("DOMContentLoaded", async () => {
       deviceStatus.serviceName.textContent = ble.activeService || '—';
     }
   }
+  const hudBar = qs("hudBar");
+  function updateHudTitleVisibility(speedKmh) {
+    if (!hudBar) return;
+    const compact = Number.isFinite(speedKmh) && speedKmh > 0.1;
+    hudBar.classList.toggle("compact", compact);
+  }
 
   function setConnectedUI(isConnected) {
     ui.connectBtn.style.display = isConnected ? 'none' : '';
@@ -918,7 +929,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   const MAX_BACKLOG_M = 200; // cap backlog in meters to avoid runaway
 
   const walker = new BLEWalker();
-  walker.onConnectionChange = (isConnected) => setConnectedUI(isConnected);
+  walker.onConnectionChange = (isConnected) => {
+    setConnectedUI(isConnected);
+    setTapZoneVisible(!isConnected);
+  };
   walker.onData = () => {
     const total = walker.sensors.distanceM || 0;
     if (walker.sensors.prevDistance == null) {
@@ -931,6 +945,104 @@ window.addEventListener("DOMContentLoaded", async () => {
       renderMetrics(walker.sensors, walker);
     }
   };
+  const virtual = {
+    speedKmh: 0,
+    distanceM: 0,
+    pendingM: 0,
+    lastUpdateMs: performance.now(),
+    running: false,
+  };
+  const VIRTUAL_MAX_SPEED_KMH = 35;
+  const VIRTUAL_BOOST_KMH = 2.0;
+  const VIRTUAL_DECEL_KMH_PER_SEC = 4.0;
+  const VIRTUAL_STEP_M = 1.0;
+  const tapZone = qs("tapZone");
+  function setTapZoneVisible(show) {
+    document.body.classList.toggle("tapzone-visible", show && !isHistoryOpen);
+  }
+  function setAuthToastVisible(show) {
+    document.body.classList.toggle("auth-visible", show && !isHistoryOpen);
+  }
+
+  function isEditableTarget(target) {
+    const el = target;
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = el.tagName ? el.tagName.toLowerCase() : "";
+    return tag === "input" || tag === "textarea" || tag === "select";
+  }
+
+  function renderVirtualMetrics() {
+    deviceStatus.speed.textContent = virtual.speedKmh.toFixed(1);
+    deviceStatus.cadence.textContent = "0";
+    deviceStatus.distance.textContent = virtual.distanceM.toFixed(0);
+    deviceStatus.deviceName.textContent = "Virtual";
+    deviceStatus.serviceName.textContent = "Tap/Keyboard";
+    deviceStatus.status.textContent = "Connected (Virtual)";
+    updateHudTitleVisibility(virtual.speedKmh);
+  }
+
+  function stepVirtualDistance(nowMs) {
+    const dt = Math.max(0, (nowMs - virtual.lastUpdateMs) / 1000);
+    virtual.lastUpdateMs = nowMs;
+    if (walker.activeService) {
+      virtual.speedKmh = 0;
+      virtual.pendingM = 0;
+      return;
+    }
+    if (virtual.speedKmh > 0) {
+      virtual.speedKmh = Math.max(0, virtual.speedKmh - VIRTUAL_DECEL_KMH_PER_SEC * dt);
+    }
+    const deltaM = (virtual.speedKmh * 1000 / 3600) * dt;
+    if (deltaM > 0) {
+      virtual.pendingM += deltaM;
+      if (virtual.pendingM >= VIRTUAL_STEP_M) {
+        const step = virtual.pendingM;
+        virtual.pendingM = 0;
+        virtual.distanceM += step;
+        onSensorDistanceDelta(step);
+      }
+    }
+    renderVirtualMetrics();
+  }
+
+  function runVirtualLoop() {
+    if (!virtual.running) return;
+    stepVirtualDistance(performance.now());
+    if (virtual.speedKmh <= 0.01) {
+      virtual.running = false;
+      return;
+    }
+    requestAnimationFrame(runVirtualLoop);
+  }
+
+  function boostVirtual() {
+    if (walker.activeService) return;
+    virtual.speedKmh = Math.min(VIRTUAL_MAX_SPEED_KMH, virtual.speedKmh + VIRTUAL_BOOST_KMH);
+    if (!virtual.running) {
+      virtual.running = true;
+      virtual.lastUpdateMs = performance.now();
+      requestAnimationFrame(runVirtualLoop);
+    }
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.code !== "Space") return;
+    if (isEditableTarget(e.target)) return;
+    e.preventDefault();
+    boostVirtual();
+  });
+  tapZone?.addEventListener("pointerdown", (e) => {
+    if (isEditableTarget(e.target)) return;
+    e.preventDefault();
+    boostVirtual();
+  });
+  tapZone?.addEventListener("keydown", (e) => {
+    if (e.code !== "Space" && e.code !== "Enter") return;
+    e.preventDefault();
+    boostVirtual();
+  });
+  setTapZoneVisible(!walker.activeService);
   // Simple beep using Web Audio for turn alerts
   let audioCtx = null;
   let lastBeepAt = 0;
@@ -1062,6 +1174,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (diffSec > 10) { // update every >10 sec
       const speedKmh = (session.distSincePrevTimeM / diffSec) * 3.6;
       ui.hdrSpeed.textContent = (Number.isFinite(speedKmh) ? speedKmh : 0).toFixed(1);
+      updateHudTitleVisibility(speedKmh);
       session.prevTimeMs = now;
       session.distSincePrevTimeM = 0;
     }
@@ -1142,9 +1255,20 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
   if (sessionUser) await loadHistoryAndMarkers();
   if (sessionUser) await refreshPasskeys();
+  function refreshPanoLayout() {
+    if (!pano || !window.google?.maps?.event) return;
+    try { google.maps.event.trigger(pano, "resize"); } catch {}
+    try {
+      const pos = pano.getPosition();
+      if (pos) pano.setPosition(pos);
+      const pov = pano.getPov();
+      if (pov) pano.setPov({ heading: pov.heading || 0, pitch: pov.pitch || 0, zoom: pov.zoom || 1 });
+    } catch {}
+  }
   // Side pane toggle: hidden by default; show with side-open on all screens
   ui.togglePane.addEventListener('click', () => {
     document.body.classList.toggle('side-open');
+    requestAnimationFrame(() => refreshPanoLayout());
   });
 
   if (historyUI.toggle) {
