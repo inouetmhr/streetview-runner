@@ -175,6 +175,15 @@ async function appendHistory(point) {
   } catch {}
 }
 
+async function fetchHistoryRange(from, to) {
+  try {
+    const params = new URLSearchParams({ from, to });
+    const res = await fetch(`/api/history?${params.toString()}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
 async function getSession() {
   try {
     const res = await fetch('/api/auth/session');
@@ -340,6 +349,52 @@ function generateFriendlyName() {
   return `${a} ${b}`;
 }
 
+function toDateStringUTC(d) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function parseDateStringUTC(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const [y, m, d] = s.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
+  return date;
+}
+
+function getLocaleFirstDayIndex() {
+  try {
+    const locale = new Intl.Locale(navigator.language);
+    const info = locale.weekInfo;
+    if (info && info.firstDay) return info.firstDay % 7;
+  } catch {}
+  return 1; // Monday
+}
+
+function getWeekRangeUTC(dayStr, firstDayIndex) {
+  const base = parseDateStringUTC(dayStr) || new Date();
+  const dayIndex = base.getUTCDay();
+  const diff = (dayIndex - firstDayIndex + 7) % 7;
+  const start = new Date(base);
+  start.setUTCDate(base.getUTCDate() - diff);
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 6);
+  return { from: toDateStringUTC(start), to: toDateStringUTC(end) };
+}
+
+function getMonthRangeUTC(monthStr) {
+  if (!/^\d{4}-\d{2}$/.test(monthStr)) {
+    const now = new Date();
+    monthStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+  const [y, m] = monthStr.split("-").map(Number);
+  const start = new Date(Date.UTC(y, m - 1, 1));
+  const end = new Date(Date.UTC(y, m, 0));
+  return { from: toDateStringUTC(start), to: toDateStringUTC(end) };
+}
+
 function initMap(start) {
   if (!window.google || !google.maps) {
     console.warn("Google Maps API not available. Set GOOGLE_MAPS_API_KEY.");
@@ -397,6 +452,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const uiUser = { name: qs('userName'), btnEdit: qs('btnEditName'), btnReg: qs('btnRegister'), btnLogin: qs('btnLogin'), btnAddPasskey: qs('btnAddPasskey'), btnLogout: qs('btnLogout'), hint: qs('authHint'), passkeyList: qs('passkeyList') };
   const authToast = { el: qs('authToast'), btnLogin: qs('toastLogin'), btnRegister: qs('toastRegister'), btnClose: qs('toastClose') };
   let sessionUser = await getSession();
+  const dayString = () => new Date().toISOString().slice(0,10);
   let passkeyItems = [];
   let passkeyCurrentId = null;
   const renderPasskeys = () => {
@@ -527,6 +583,27 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   let map = null;
   let pano = null;
+  let historyMap = null;
+  let historyPolyline = null;
+
+  const historyUI = {
+    section: qs('historySection'),
+    toggle: qs('historyToggle'),
+    body: qs('historyBody'),
+    modeDay: qs('historyModeDay'),
+    modeWeek: qs('historyModeWeek'),
+    modeMonth: qs('historyModeMonth'),
+    prevBtn: qs('historyPrev'),
+    nextBtn: qs('historyNext'),
+    inputDay: qs('historyDay'),
+    inputWeek: qs('historyWeek'),
+    inputMonth: qs('historyMonth'),
+    range: qs('historyRange'),
+    distance: qs('historyDistance'),
+    status: qs('historyStatus'),
+  };
+  const historyFirstDayIndex = getLocaleFirstDayIndex();
+  let historyMode = "day";
 
   const captureCurrentPosition = () => {
     const pos = pano?.getPosition?.() || map?.getCenter?.();
@@ -552,7 +629,9 @@ window.addEventListener("DOMContentLoaded", async () => {
       }
       sessionUser = user;
       updateUserUI();
+      session.ignoreNextHistorySave = true;
       await afterLogin();
+      await refreshHistoryView();
       await refreshPasskeys();
     }
   };
@@ -561,7 +640,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (user) {
       sessionUser = user;
       updateUserUI();
+      session.ignoreNextHistorySave = true;
       await afterLogin();
+      await refreshHistoryView();
       await refreshPasskeys();
     }
   };
@@ -620,6 +701,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     lastStatusSaved: null,
     lastHistorySaved: null,
     turnBlocked: false,
+    ignoreNextHistorySave: false,
     // For header speed measurement
     prevTimeMs: Date.now(),
     distSincePrevTimeM: 0,
@@ -658,6 +740,160 @@ window.addEventListener("DOMContentLoaded", async () => {
       }
       await loadHistoryAndMarkers();
     } catch {}
+  }
+
+  function ensureHistoryMap() {
+    if (historyMap || !window.google || !google.maps) return;
+    historyMap = new google.maps.Map(qs('historyMap'), {
+      center: { lat: defaultLocation.lat, lng: defaultLocation.lng },
+      zoom: 14,
+      clickableIcons: false,
+      mapId: "fcf78f824472c3b8",
+      fullscreenControl: false,
+      streetViewControl: false,
+      mapTypeControl: false,
+    });
+  }
+
+  function clearHistoryPolyline() {
+    if (historyPolyline) {
+      historyPolyline.setMap(null);
+      historyPolyline = null;
+    }
+  }
+
+  function drawHistoryPolyline(items) {
+    if (!historyMap) return;
+    clearHistoryPolyline();
+    const path = items
+      .map((p) => ({ lat: Number(p.lat), lng: Number(p.lng) }))
+      .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+    if (!path.length) return;
+    historyPolyline = new google.maps.Polyline({
+      path,
+      strokeColor: "#2563eb",
+      strokeOpacity: 0.9,
+      strokeWeight: 4,
+      map: historyMap,
+    });
+    if (path.length === 1) {
+      historyMap.setCenter(path[0]);
+      historyMap.setZoom(16);
+      return;
+    }
+    const bounds = new google.maps.LatLngBounds();
+    path.forEach((p) => bounds.extend(p));
+    historyMap.fitBounds(bounds, 240);
+  }
+
+  function updateHistoryModeButtons() {
+    const modes = [
+      { mode: "day", btn: historyUI.modeDay },
+      { mode: "week", btn: historyUI.modeWeek },
+      { mode: "month", btn: historyUI.modeMonth },
+    ];
+    modes.forEach(({ mode, btn }) => {
+      if (!btn) return;
+      btn.classList.toggle("active", historyMode === mode);
+    });
+    if (historyUI.inputDay) historyUI.inputDay.style.display = historyMode === "day" ? "" : "none";
+    if (historyUI.inputWeek) historyUI.inputWeek.style.display = historyMode === "week" ? "" : "none";
+    if (historyUI.inputMonth) historyUI.inputMonth.style.display = historyMode === "month" ? "" : "none";
+  }
+
+  function getHistoryRangeFromInputs() {
+    if (historyMode === "day") {
+      const day = historyUI.inputDay?.value || dayString();
+      return { from: day, to: day };
+    }
+    if (historyMode === "week") {
+      const day = historyUI.inputWeek?.value || dayString();
+      return getWeekRangeUTC(day, historyFirstDayIndex);
+    }
+    const month = historyUI.inputMonth?.value || dayString().slice(0, 7);
+    return getMonthRangeUTC(month);
+  }
+
+  function shiftHistoryPeriod(direction) {
+    if (historyMode === "day") {
+      const base = parseDateStringUTC(historyUI.inputDay?.value || dayString()) || new Date();
+      base.setUTCDate(base.getUTCDate() + direction);
+      if (historyUI.inputDay) historyUI.inputDay.value = toDateStringUTC(base);
+      return;
+    }
+    if (historyMode === "week") {
+      const base = parseDateStringUTC(historyUI.inputWeek?.value || dayString()) || new Date();
+      base.setUTCDate(base.getUTCDate() + (direction * 7));
+      if (historyUI.inputWeek) historyUI.inputWeek.value = toDateStringUTC(base);
+      return;
+    }
+    const monthStr = historyUI.inputMonth?.value || dayString().slice(0, 7);
+    const [y, m] = monthStr.split("-").map(Number);
+    const next = new Date(Date.UTC(y, (m - 1) + direction, 1));
+    const nextStr = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}`;
+    if (historyUI.inputMonth) historyUI.inputMonth.value = nextStr;
+  }
+
+  async function refreshHistoryView() {
+    if (!historyUI.body || !historyUI.body.classList.contains("open")) return;
+    if (!historyUI.status || !historyUI.range || !historyUI.distance) return;
+    if (!sessionUser) {
+      historyUI.status.textContent = "Sign in to view history.";
+      historyUI.range.textContent = "—";
+      historyUI.distance.textContent = "—";
+      clearHistoryPolyline();
+      return;
+    }
+    const range = getHistoryRangeFromInputs();
+    if (!range?.from || !range?.to) {
+      historyUI.status.textContent = "Invalid date.";
+      historyUI.range.textContent = "—";
+      historyUI.distance.textContent = "—";
+      clearHistoryPolyline();
+      return;
+    }
+    historyUI.range.textContent = `${range.from} to ${range.to}`;
+    historyUI.status.textContent = "Loading...";
+    ensureHistoryMap();
+    if (!historyMap) {
+      historyUI.status.textContent = "Maps API not available.";
+      return;
+    }
+    const data = await fetchHistoryRange(range.from, range.to);
+    if (!data?.ok) {
+      historyUI.status.textContent = "Failed to load history.";
+      clearHistoryPolyline();
+      return;
+    }
+    const items = Array.isArray(data.items) ? data.items : [];
+    const distanceMeters = data.summary?.distanceMeters;
+    if (Number.isFinite(distanceMeters)) {
+      historyUI.distance.textContent = `${(distanceMeters / 1000).toFixed(2)} km`;
+    } else {
+      historyUI.distance.textContent = "—";
+    }
+    if (!items.length) {
+      historyUI.status.textContent = "No history in this range.";
+      clearHistoryPolyline();
+      return;
+    }
+    historyUI.status.textContent = "";
+    drawHistoryPolyline(items);
+  }
+
+  function setHistoryOpen(open) {
+    if (!historyUI.body || !historyUI.toggle) return;
+    historyUI.body.classList.toggle("open", open);
+    historyUI.toggle.textContent = open ? "Close" : "Open";
+    historyUI.toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    document.body.classList.toggle("history-open", open);
+    if (open) {
+      ensureHistoryMap();
+      if (historyMap && window.google?.maps?.event) {
+        google.maps.event.trigger(historyMap, "resize");
+      }
+      refreshHistoryView();
+    }
   }
 
   function renderMetrics(metrics, ble) {
@@ -835,18 +1071,24 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Persist status and history at different intervals (no time fallback)
     const STATUS_SAVE_DISTANCE_M = 100;
     const HISTORY_SAVE_DISTANCE_M = 100;
-      if (sessionUser) {
+    if (sessionUser) {
+      if (session.ignoreNextHistorySave) {
+        session.lastStatusSaved = { ...currentPos };
+        session.lastHistorySaved = { ...currentPos };
+        session.ignoreNextHistorySave = false;
+      } else {
         const statusChanged = !session.lastStatusSaved
           || distMeters(session.lastStatusSaved, currentPos) >= STATUS_SAVE_DISTANCE_M;
         if (statusChanged) {
           session.lastStatusSaved = { ...currentPos };
-        saveStatus({ ...currentPos, heading });
-      }
-      const historyChanged = !session.lastHistorySaved
-        || distMeters(session.lastHistorySaved, currentPos) >= HISTORY_SAVE_DISTANCE_M;
-      if (historyChanged) {
-        session.lastHistorySaved = { ...currentPos };
-        appendHistory({ ...currentPos, heading, ts: Date.now() });
+          saveStatus({ ...currentPos, heading });
+        }
+        const historyChanged = !session.lastHistorySaved
+          || distMeters(session.lastHistorySaved, currentPos) >= HISTORY_SAVE_DISTANCE_M;
+        if (historyChanged) {
+          session.lastHistorySaved = { ...currentPos };
+          appendHistory({ ...currentPos, heading, ts: Date.now() });
+        }
       }
     }
   });
@@ -864,7 +1106,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   // No explicit disconnect button per spec; disconnect via OS/BLE UI
 
   // Daily distance persistence (localStorage), scoped per user
-  const dayString = () => new Date().toISOString().slice(0,10);
   const ddKey = (dStr) => `dailyDistance:${sessionUser?.userId || 'anon'}:${dStr}`;
   const loadDailyDistanceFor = (dStr) => {
     const v = parseFloat(localStorage.getItem(ddKey(dStr)) ?? '');
@@ -905,6 +1146,26 @@ window.addEventListener("DOMContentLoaded", async () => {
   ui.togglePane.addEventListener('click', () => {
     document.body.classList.toggle('side-open');
   });
+
+  if (historyUI.toggle) {
+    historyUI.toggle.addEventListener('click', () => {
+      const nextOpen = !historyUI.body?.classList.contains("open");
+      setHistoryOpen(nextOpen);
+    });
+  }
+  if (historyUI.modeDay) historyUI.modeDay.addEventListener("click", () => { historyMode = "day"; updateHistoryModeButtons(); refreshHistoryView(); });
+  if (historyUI.modeWeek) historyUI.modeWeek.addEventListener("click", () => { historyMode = "week"; updateHistoryModeButtons(); refreshHistoryView(); });
+  if (historyUI.modeMonth) historyUI.modeMonth.addEventListener("click", () => { historyMode = "month"; updateHistoryModeButtons(); refreshHistoryView(); });
+  if (historyUI.prevBtn) historyUI.prevBtn.addEventListener("click", () => { shiftHistoryPeriod(-1); refreshHistoryView(); });
+  if (historyUI.nextBtn) historyUI.nextBtn.addEventListener("click", () => { shiftHistoryPeriod(1); refreshHistoryView(); });
+  if (historyUI.inputDay) historyUI.inputDay.addEventListener("change", () => refreshHistoryView());
+  if (historyUI.inputWeek) historyUI.inputWeek.addEventListener("change", () => refreshHistoryView());
+  if (historyUI.inputMonth) historyUI.inputMonth.addEventListener("change", () => refreshHistoryView());
+
+  if (historyUI.inputDay) historyUI.inputDay.value = session.dayStr;
+  if (historyUI.inputWeek) historyUI.inputWeek.value = session.dayStr;
+  if (historyUI.inputMonth) historyUI.inputMonth.value = session.dayStr.slice(0, 7);
+  updateHistoryModeButtons();
 
   function putMarker(location) {
       try {

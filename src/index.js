@@ -471,13 +471,24 @@ async function handleApi(request, env, url) {
   if (pathname === "/api/history") {
     if (request.method === "GET") {
       const userId = await getSessionUserId(request, env);
-      const day = (searchParams.get("day") || today()).trim();
       if (!userId) return json({ error: "unauthorized" }, 401);
       if (env.SVR_DB) {
+        const fromParam = (searchParams.get("from") || "").trim();
+        const toParam = (searchParams.get("to") || "").trim();
+        if (fromParam || toParam) {
+          const range = normalizeHistoryRange(fromParam, toParam);
+          if (!range) return json({ error: "invalid date range" }, 400);
+          const items = await getHistoryRangeFromD1(env, userId, range.from, range.to);
+          const summary = summarizeHistory(items);
+          return json({ ok: true, items, summary });
+        }
+        const day = (searchParams.get("day") || today()).trim();
+        if (!isValidDayString(day)) return json({ error: "invalid day" }, 400);
         const items = await getHistoryFromD1(env, userId, day);
-        return json({ ok: true, items });
+        const summary = summarizeHistory(items);
+        return json({ ok: true, items, summary });
       }
-      return json({ ok: true, items: [] });
+      return json({ ok: true, items: [], summary: { distanceMeters: 0, count: 0 } });
     }
     if (request.method === "POST") {
       const body = await safeJson(request);
@@ -605,6 +616,14 @@ async function getHistoryFromD1(env, userId, day) {
   return Array.isArray(res?.results) ? res.results : [];
 }
 
+async function getHistoryRangeFromD1(env, userId, fromDay, toDay) {
+  const res = await env.SVR_DB
+    .prepare("SELECT lat, lng, heading, ts FROM history WHERE user_id = ?1 AND day >= ?2 AND day <= ?3 ORDER BY day ASC, ts ASC")
+    .bind(userId, fromDay, toDay)
+    .all();
+  return Array.isArray(res?.results) ? res.results : [];
+}
+
 async function getLatestHistoryFromD1(env, userId) {
   return await env.SVR_DB
     .prepare("SELECT lat, lng, heading, ts FROM history WHERE user_id = ?1 ORDER BY ts DESC LIMIT 1")
@@ -658,4 +677,45 @@ function originOk(request, url) {
   // Some tools may not send Origin; only enforce when present
   if (origin && origin !== url.origin) return false;
   return true;
+}
+
+function isValidDayString(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return Number.isFinite(d.valueOf()) && d.toISOString().slice(0, 10) === s;
+}
+
+function normalizeHistoryRange(fromParam, toParam) {
+  const from = fromParam || toParam;
+  const to = toParam || fromParam;
+  if (!from || !to) return null;
+  if (!isValidDayString(from) || !isValidDayString(to)) return null;
+  if (from > to) return null;
+  return { from, to };
+}
+
+function summarizeHistory(items) {
+  if (!Array.isArray(items) || items.length < 2) {
+    return { distanceMeters: 0, count: Array.isArray(items) ? items.length : 0 };
+  }
+  let distanceMeters = 0;
+  let prev = null;
+  for (const item of items) {
+    if (!item || !isFinite(item.lat) || !isFinite(item.lng)) continue;
+    const current = { lat: Number(item.lat), lng: Number(item.lng) };
+    if (prev) distanceMeters += distMeters(prev, current);
+    prev = current;
+  }
+  return { distanceMeters, count: items.length };
+}
+
+function distMeters(a, b) {
+  const R = 6371000;
+  const toRad = (d) => d * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const la1 = toRad(a.lat);
+  const la2 = toRad(b.lat);
+  const h = Math.sin(dLat/2)**2 + Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
 }

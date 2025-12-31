@@ -13,6 +13,7 @@
       main { display: grid; grid-template-columns: 1fr; gap: 0; height: calc(100% - 3rem); }
       #panoWrap { position: relative; width: 100%; height: 100%; }
       #pano { width: 100%; height: 100%; }
+      #historyMap { position: absolute; inset: 0; display: none; }
       #miniMap { position: absolute; right: 12px; top: 12px; width: 200px; height: 170px; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,.15); background: #fff; z-index: 10; }
       #turnToast { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); background:#dc2626; color:white; padding: 1rem 1.5rem; border-radius:.5rem; font-size: 2rem; display:none; z-index: 11; box-shadow: 0 6px 18px rgba(220,38,38,.4); pointer-events: none; }
       #authToast { position: fixed; left: 50%; top: calc(3rem + 8px); transform: translateX(-50%); background:#111827; color:white; padding: .75rem 1rem; border-radius: .5rem; display:none; z-index: 60; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
@@ -30,11 +31,21 @@
       .small { font-size: .875rem; }
       .range { width: 100%; }
       .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; }
+      .mode-btn.active { background:#111827; color:white; border-color:#111827; }
+      .section-toggle { cursor:pointer; user-select:none; }
+      .history-body { display:none; margin-top: .5rem; }
+      .history-body.open { display:block; }
+      .nav-btn { border-color: #d1d5db; }
+      body.history-open #pano { display: none; }
+      body.history-open #miniMap { display: none; }
+      body.history-open #turnToast { display: none; }
+      body.history-open #historyMap { display: block; }
       /* Wide screen: show side when opened */
       body.side-open main { grid-template-columns: 1fr minmax(240px, 26vw); }
       body.side-open #side { display: block; position: static; box-shadow: none; }
       .meters { display:flex; align-items:center; gap:.25rem; }
       .btn-edit { font-size: .75rem; padding: .2rem .45rem; margin-left: .5rem; border-radius: .25rem; border-color: #d1d5db; color: #374151; }
+      button.ghost.icon { border-color: #d1d5db; }
 
       /* Responsive side panel: hide on small screens, show as overlay when toggled */
       @media (max-width: 900px) {
@@ -63,6 +74,7 @@
     <main>
       <div id="panoWrap">
         <div id="pano"></div>
+        <div id="historyMap" aria-label="History map"></div>
         <div id="miniMap" aria-label="Mini map"></div>
         <div id="turnToast" role="status" aria-live="polite">Turn!</div>
         <div id="authToast" role="dialog" aria-live="polite">
@@ -92,17 +104,37 @@
           </div>
           <div id="authHint" class="small muted" style="margin-top:.5rem; display:none;">Sign in to save your ride.</div>
         </div>
+        <div class="section" id="historySection">
+          <div class="section-header">
+            <h3>History</h3>
+            <button id="historyToggle" class="ghost small section-toggle" aria-expanded="false">Open</button>
+          </div>
+          <div id="historyBody" class="history-body">
+            <div class="controls">
+              <button id="historyModeDay" class="ghost small mode-btn">Day</button>
+              <button id="historyModeWeek" class="ghost small mode-btn">Week</button>
+              <button id="historyModeMonth" class="ghost small mode-btn">Month</button>
+            </div>
+            <div class="controls">
+              <button id="historyPrev" class="ghost small nav-btn" title="Previous period">&lt;</button>
+              <input id="historyDay" type="date" lang="en" />
+              <input id="historyWeek" type="date" lang="en" style="display:none;" />
+              <input id="historyMonth" type="month" lang="en" style="display:none;" />
+              <button id="historyNext" class="ghost small nav-btn" title="Next period">&gt;</button>
+            </div>
+            <div class="kvs small">
+              <div class="muted">Range:</div><div id="historyRange">—</div>
+              <div class="muted">Distance:</div><div id="historyDistance">—</div>
+            </div>
+            <div id="historyStatus" class="small muted" style="margin-top:.5rem;">—</div>
+          </div>
+        </div>
         <div class="section">
           <h3>Device</h3>
           <div class="kvs small">
             <div class="muted">Device:</div><div id="deviceName">—</div>
             <div class="muted">Service:</div><div id="serviceName">—</div>
             <div class="muted">Status:</div><div id="status">Idle</div>
-          </div>
-        </div>
-        <div class="section">
-          <h3>Sensors</h3>
-          <div class="kvs">
             <div class="muted">Speed:</div><div><span id="speed">0.0</span> km/h</div>
             <div class="muted">Cadence:</div><div><span id="cadence">0</span> rpm</div>
             <div class="muted">Distance:</div><div><span id="distance">0.0</span> m</div>

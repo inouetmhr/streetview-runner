@@ -29,7 +29,9 @@
   - Body `{ location:{ lat:number, lng:number, heading?:number } }`
   - 200 `{ ok: true }`; 400 on invalid/missing fields. No server-side persistence when D1 is enabled.
 - GET `/api/history?day=YYYY-MM-DD`
-  - 200 `{ ok: true, items: Array<{ lat,lng,heading,ts }> }`; day defaults to today.
+  - 200 `{ ok: true, items: Array<{ lat,lng,heading,ts }>, summary:{ distanceMeters:number, count:number } }`; day defaults to today.
+- GET `/api/history?from=YYYY-MM-DD&to=YYYY-MM-DD`
+  - 200 `{ ok: true, items: Array<{ lat,lng,heading,ts }>, summary:{ distanceMeters:number, count:number } }`
 - POST `/api/history`
   - Body `{ point:{ lat:number, lng:number, heading?:number, ts?:number, day?:string } }`
   - 200 `{ ok: true }`; 400 on invalid input.
@@ -64,12 +66,14 @@ Notes:
 
 ### UI
 - The main content is Street View Panorama by Google Maps, with overlaying mini map.
+- History view replaces the panorama with a full-size map showing a polyline for the selected period.
 - Top of the screen
   - It shows s speed meter (km/h) and and an odometer (km) which shows traveled distance for the day.
   - BLE connect button is shown when and only no BLE device is connected. 
 - Side Pane: following elements are show in a pane that is collapsible and hidden in default.
   - User info: user name with an Edit button, register/login/add-passkey controls; Logout is shown on the User header.
-  - Status: Device name, active service, connection status; sensor metrics: speed (km/h), cadence (rpm), distance (m).
+  - History: day/week/month range selectors with previous/next controls; shows total distance and opens History view.
+  - Device: Device name, active service, connection status; sensor metrics: speed (km/h), cadence (rpm), distance (m).
 - Interactions: choose forward link closest to current heading;  auto‑align POV to link heading when turn >45°.
 - "Turn!" notify toast and beep to request the user to choose direction.
  - Auth prompt: a small toast is shown below the header when logged out, prompting Register or Login; hides on successful auth.
@@ -117,6 +121,7 @@ Notes:
   - persist status to cloud every ≥100 m.
   - persist history to cloud every ≥100 m.
   - update daily distance in localStorage from every delta.
+  - do not persist the initial position immediately after login.
 
 ## Local Storage
 - `dailyDistance:{userId}:{YYYY-MM-DD}` → daily distance meters (string).
@@ -153,6 +158,7 @@ Notes:
 2) Connect an FTMS bike; verify device/service labels, cadence rpm, speed km/h, distance m updating.
 3) Enable auto‑advance; confirm “Turn!” alerts on sharp turns.
 4) History persists in KV (refresh and resume last position and day's history).
+5) History view: open History, switch day/week/month, and verify distance + polyline render on the full-size map.
 5) Inspect Worker logs for API requests; verify 400/405 behaviors for invalid input/methods.
 6) Auth flows:
    - First visit: `GET /api/auth/session` returns 401; start registration; passkey created; cookie set; session shows user.
@@ -166,8 +172,7 @@ Notes:
 - Docs: this spec at `/SPEC.md`.
 
 ## TODO (tobe implemented in the future)
-- 日、週、月の単位で hisotry を見る画面を作る
-  - (option) それぞれの移動距離も表示する
+- nothing now.
 
 ## Rollout / Backout
 - nothing now.
