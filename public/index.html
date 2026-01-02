@@ -26,11 +26,28 @@
       #turnToast { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); background:#dc2626; color:white; padding: 1rem 1.5rem; border-radius:.5rem; font-size: 2rem; display:none; z-index: 11; box-shadow: 0 6px 18px rgba(220,38,38,.4); pointer-events: none; }
       #tapZone { position:absolute; left:50%; bottom:calc(12px + env(safe-area-inset-bottom)); transform:translateX(-50%); width:min(520px, 88vw); height:56px; background:rgba(17,24,39,.85); color:white; border-radius: 28px; display:none; align-items:center; justify-content:center; gap:.5rem; font-size:.95rem; z-index: 12; box-shadow: 0 8px 20px rgba(0,0,0,.2); user-select:none; touch-action: manipulation; }
       #tapZone .hint { opacity:.85; font-size:.8rem; }
-      #authToast { position: fixed; left: 50%; top: 72px; transform: translateX(-50%); background:#dbeafe; color:#1e3a8a; padding: .75rem 1rem; border-radius: .5rem; display:none; z-index: 60; box-shadow: 0 6px 18px rgba(30,58,138,.2); }
-      #authToast .actions { display:inline-flex; gap:.5rem; margin-left:.75rem; }
+      #authToast { position: fixed; left: 50%; top: 72px; transform: translateX(-50%); background:#f8fafc; color:#0f172a; padding: .75rem 1rem; border-radius: .5rem; display:none; z-index: 60; box-shadow: 0 8px 18px rgba(37,99,235,.16); border: none; text-align: center; }
+      #authToast .actions { display:inline-flex; gap:.5rem; margin-left: 0; margin-top: .3rem; justify-content: center; }
+      #authToast button.ghost { background: #eff6ff; color: #1e3a8a; border-color: #93c5fd; }
+      #authToast button.ghost:hover { background: #dbeafe; }
       body.auth-visible #authToast { display: block; }
       body.tapzone-visible #tapZone { display: flex; }
-      #side { display:none; border-right: 1px solid #bfdbfe; padding: 52px .75rem .75rem; overflow: auto; min-height: 0; height: 100%; grid-area: side; background: #eff6ff; }
+      #side { display:none; border-right: 1px solid #bfdbfe; padding: 52px .75rem .75rem; overflow: auto; min-height: 0; height: 100%; grid-area: side; background: #f8fafc; }
+      #side h3 { color: #0f172a; }
+      #side .section { border-bottom: 1px solid #e2e8f0; padding-bottom: .5rem; }
+      #side .section:last-child { border-bottom: none; }
+      #side .muted { color: #64748b; }
+      #side button.ghost { background: #eff6ff; color: #1e3a8a; border-color: #93c5fd; }
+      #side button.ghost:hover { background: #dbeafe; }
+      #side button.btn-edit { background: white; color: #111827; border-color: #d1d5db; }
+      #side button.btn-edit:hover { background: #f3f4f6; }
+      #side button.icon { border-color: transparent; background: transparent; }
+      #side button.icon:hover { background: #f3f4f6; }
+      #side #passkeyList { padding-left: .4rem; }
+      #side #btnAddPasskey { background: #f8fafc; color: #334155; border-color: #cbd5f5; margin-left: .4rem; }
+      #side #btnAddPasskey:hover { background: #e2e8f0; }
+      #side .mode-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+      #side .nav-btn { border-color: #93c5fd; }
       .controls { display:flex; gap:.5rem; margin:.5rem 0; flex-wrap:wrap; }
       input, button, select { padding: .5rem .6rem; border:1px solid #d1d5db; border-radius: .375rem; }
       button { cursor:pointer; background:#111827; color:white; border-color:#111827; }
@@ -66,8 +83,9 @@
       .float-right { right: 12px; }
       .global-menu { position: fixed; top: 12px; left: 12px; z-index: 90; display:flex; align-items:center; gap:.5rem; }
       .float-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: rgba(15,23,42,.9); color:#f8fafc; font-weight:700; box-shadow: 0 8px 18px rgba(0,0,0,.28); display:flex; align-items:center; justify-content:center; }
+      #togglePane { background: rgba(17,24,39,.85); }
       .float-btn:hover { filter: brightness(0.98); }
-      .float-connect { padding: .45rem .85rem; border-radius: 999px; border: none; background: #fbbf24; color:#111827; font-weight: 700; box-shadow: 0 6px 16px rgba(0,0,0,.2); display: inline-flex; align-items: center; }
+      .float-connect { padding: .45rem .85rem; border-radius: 999px; border: none; background: #2563eb; color:#f8fafc; font-weight: 700; box-shadow: 0 8px 18px rgba(37,99,235,.35); display: inline-flex; align-items: center; }
       .float-connect::before { content: "ᛒ"; display: inline-block; margin-right: .25rem; font-size: 1rem; }
 
       /* Responsive side panel: hide on small screens, show as overlay when toggled */
@@ -75,7 +93,7 @@
         main { grid-template-columns: 1fr; }
         #side { display: none; }
         body.side-open main { grid-template-columns: 1fr; }
-        body.side-open #side { display: block; position: fixed; top: 0; left: 0; bottom: 0; width: min(88vw, 320px); background: #eff6ff; box-shadow: 6px 0 18px rgba(30,58,138,.18); border-right: 1px solid #bfdbfe; z-index: 50; overflow: auto; padding-top: 52px; }
+        body.side-open #side { display: block; position: fixed; top: 0; left: 0; bottom: 0; width: min(88vw, 320px); background: #f8fafc; box-shadow: 6px 0 18px rgba(37,99,235,.18); border-right: 1px solid #bfdbfe; z-index: 50; overflow: auto; padding-top: 52px; }
       }
       @media (max-width: 640px) {
         #authToast { top: auto; bottom: calc(84px + env(safe-area-inset-bottom)); }
@@ -139,7 +157,7 @@
           <div class="controls" style="margin-top:.5rem;">
             <button id="btnRegister" class="ghost">Register</button>
             <button id="btnLogin" class="ghost">Login</button>
-            <button id="btnAddPasskey" class="ghost" style="display:none;">Add passkey</button>
+            <button id="btnAddPasskey" class="ghost" style="display:none;">+ Add Passkey</button>
           </div>
           <div id="authHint" class="small muted" style="margin-top:.5rem; display:none;">Sign in to save your ride.</div>
         </div>

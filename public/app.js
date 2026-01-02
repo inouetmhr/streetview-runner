@@ -1207,12 +1207,23 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   // BLE controls
+  const UNSUPPORTED_BLE_MESSAGE = "Web Bluetooth isn’t supported on Firefox or iOS.";
   const doConnect = async () => {
     try {
       deviceStatus.status.textContent = 'Connecting…';
       await walker.connect();
     } catch (e) {
-      deviceStatus.status.textContent = String(e.message || e);
+      const message = String(e?.message || e);
+      if (e?.name === "NotFoundError") {
+        deviceStatus.status.textContent = message;
+        return;
+      }
+      const isUnsupported = e?.name === "NotSupportedError"
+        || /not supported/i.test(message)
+        || (e instanceof TypeError && /bluetooth|requestdevice/i.test(message));
+      const finalMessage = isUnsupported ? UNSUPPORTED_BLE_MESSAGE : message;
+      deviceStatus.status.textContent = finalMessage;
+      alert(finalMessage);
     }
   };
   if (ui.connectBtn) ui.connectBtn.addEventListener('click', doConnect);
@@ -1285,7 +1296,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (historyUI.inputDay) historyUI.inputDay.addEventListener("change", () => refreshHistoryView());
   if (historyUI.inputWeek) historyUI.inputWeek.addEventListener("change", () => refreshHistoryView());
   if (historyUI.inputMonth) historyUI.inputMonth.addEventListener("change", () => refreshHistoryView());
-
   if (historyUI.inputDay) historyUI.inputDay.value = session.dayStr;
   if (historyUI.inputWeek) historyUI.inputWeek.value = session.dayStr;
   if (historyUI.inputMonth) historyUI.inputMonth.value = session.dayStr.slice(0, 7);
