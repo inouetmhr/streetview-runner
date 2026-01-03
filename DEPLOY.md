@@ -15,7 +15,15 @@ Authenticate
 
 Create KV Namespace
 - `npx wrangler kv namespace create SVR_KV`
-- Copy the returned `id` (and `preview_id` if shown) into `wrangler.toml` under the root `[[kv_namespaces]]` section.
+- Copy the returned `id` (and `preview_id` if shown) into your local config:
+  - Local/dev: `wrangler.toml`
+  - Production: copy `wrangler.toml` → `wrangler.production.toml` (local-only; git-ignored), then replace values
+
+Create D1 Database
+- `npx wrangler d1 create svr-db`
+- Copy the returned `database_id` into your local config:
+  - Local/dev: `wrangler.toml`
+  - Production: `wrangler.production.toml` (local-only; git-ignored)
 
 Set Secret (do not commit keys)
 - `npx wrangler secret put GOOGLE_MAPS_API_KEY`
@@ -25,6 +33,10 @@ Preview at the Edge
 
 Deploy
 - `npm run deploy`
+- Production (local-only config): `npx wrangler deploy --config wrangler.production.toml`
+  - Start from `wrangler.toml` and copy to `wrangler.production.toml`, then add `routes` and real IDs.
+  - Example:
+    - `routes = [{ pattern = "your-domain.example/*", zone_name = "example" }]`
 
 Verify
 - Open the Worker URL (e.g., `https://svr-cf.<subdomain>.workers.dev`).
@@ -35,3 +47,4 @@ Verify
 Notes
 - Secrets are not in `wrangler.toml`. Local dev reads `.dev.vars`; deployed Workers use secrets set via `wrangler secret`.
 - Static files are served from `/public` via the `ASSETS` binding; the Worker injects the Maps API key into HTML at runtime.
+- Keep `wrangler.toml` in Git for shared defaults; store production routes and IDs in `wrangler.production.toml` (git-ignored).

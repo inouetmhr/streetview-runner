@@ -4,5 +4,6 @@ dist
 .cache
 *.local
 .dev.vars
+wrangler.production.toml
 
 .home/

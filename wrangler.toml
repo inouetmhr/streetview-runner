@@ -1,7 +1,8 @@
 name = "svr-cf"
 main = "src/index.js"
 compatibility_date = "2024-09-19"
-routes = [{ pattern = "street-view-runner.noue.org/*", zone_name = "noue.org" }]
+# Example (production-only) routes:
+# routes = [{ pattern = "your-domain.example/*", zone_name = "example" }]
 
  # The following configuration unconditionally invokes the Worker script at
  # `src/index.ts`, which can programatically fetch assets via the ASSETS binding
@@ -17,10 +18,11 @@ port = 8787
 
 [[kv_namespaces]]
 binding = "SVR_KV"
-# Placeholder IDs work for local dev; set real IDs after creating KV in Cloudflare
-id = "a391c69e3e8d44c4840d9d4da02f5a6c"
+# Placeholder IDs work for local dev; set real IDs after creating KV in Cloudflare.
+# For production, use a separate local-only config (e.g., wrangler.production.toml).
+id = "CHANGEME"
 
 [[d1_databases]]
 binding = "SVR_DB"
 database_name = "svr-db"
-database_id = "297f593c-1925-4f03-ab2d-8d26efc8272d"
+database_id = "CHANGEME"
