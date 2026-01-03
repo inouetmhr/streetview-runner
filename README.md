@@ -76,4 +76,4 @@ npx wrangler deploy --config wrangler.production.toml
 - Local: `.dev.vars` only
 
 ## Others
-See `SPEC.md` for details.
+See [SPEC.md](SPEC.md) for details.
