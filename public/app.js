@@ -931,6 +931,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   const walker = new BLEWalker();
   walker.onConnectionChange = (isConnected) => {
     setConnectedUI(isConnected);
+    if (isConnected) {
+      virtual.autoEnabled = false;
+      virtual.speedKmh = 0;
+      virtual.pendingM = 0;
+      updateAutoProgressLabel();
+      renderVirtualMetrics();
+    }
     setTapZoneVisible(!isConnected);
   };
   walker.onData = () => {
@@ -946,17 +953,17 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   };
   const virtual = {
+    autoEnabled: false,
     speedKmh: 0,
     distanceM: 0,
     pendingM: 0,
     lastUpdateMs: performance.now(),
     running: false,
   };
-  const VIRTUAL_MAX_SPEED_KMH = 35;
-  const VIRTUAL_BOOST_KMH = 2.0;
-  const VIRTUAL_DECEL_KMH_PER_SEC = 4.0;
+  const AUTO_SPEED_KMH = 15.0;
   const VIRTUAL_STEP_M = 1.0;
   const tapZone = qs("tapZone");
+  const autoProgressLabel = qs("autoProgressLabel");
   function setTapZoneVisible(show) {
     document.body.classList.toggle("tapzone-visible", show && !isHistoryOpen);
   }
@@ -977,9 +984,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     deviceStatus.cadence.textContent = "0";
     deviceStatus.distance.textContent = virtual.distanceM.toFixed(0);
     deviceStatus.deviceName.textContent = "Virtual";
-    deviceStatus.serviceName.textContent = "Tap/Keyboard";
-    deviceStatus.status.textContent = "Connected (Virtual)";
-    updateHudTitleVisibility(virtual.speedKmh);
+    deviceStatus.serviceName.textContent = "Auto progress";
+    deviceStatus.status.textContent = virtual.autoEnabled ? "Connected (Auto)" : "Idle (Auto off)";
+    updateHudTitleVisibility(virtual.autoEnabled ? virtual.speedKmh : 0);
   }
 
   function stepVirtualDistance(nowMs) {
@@ -988,11 +995,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (walker.activeService) {
       virtual.speedKmh = 0;
       virtual.pendingM = 0;
+      virtual.autoEnabled = false;
       return;
     }
-    if (virtual.speedKmh > 0) {
-      virtual.speedKmh = Math.max(0, virtual.speedKmh - VIRTUAL_DECEL_KMH_PER_SEC * dt);
-    }
+    if (!virtual.autoEnabled) return;
+    virtual.speedKmh = AUTO_SPEED_KMH;
     const deltaM = (virtual.speedKmh * 1000 / 3600) * dt;
     if (deltaM > 0) {
       virtual.pendingM += deltaM;
@@ -1009,39 +1016,45 @@ window.addEventListener("DOMContentLoaded", async () => {
   function runVirtualLoop() {
     if (!virtual.running) return;
     stepVirtualDistance(performance.now());
-    if (virtual.speedKmh <= 0.01) {
+    if (!virtual.autoEnabled) {
       virtual.running = false;
       return;
     }
     requestAnimationFrame(runVirtualLoop);
   }
 
-  function boostVirtual() {
+  function updateAutoProgressLabel() {
+    if (!autoProgressLabel) return;
+    autoProgressLabel.textContent = `Auto forward: ${virtual.autoEnabled ? "On" : "Off"}`;
+  }
+
+  function toggleAutoProgress() {
     if (walker.activeService) return;
-    virtual.speedKmh = Math.min(VIRTUAL_MAX_SPEED_KMH, virtual.speedKmh + VIRTUAL_BOOST_KMH);
-    if (!virtual.running) {
+    virtual.autoEnabled = !virtual.autoEnabled;
+    virtual.speedKmh = virtual.autoEnabled ? AUTO_SPEED_KMH : 0;
+    if (virtual.autoEnabled && !virtual.running) {
       virtual.running = true;
       virtual.lastUpdateMs = performance.now();
       requestAnimationFrame(runVirtualLoop);
     }
+    if (!virtual.autoEnabled) {
+      virtual.pendingM = 0;
+    }
+    updateAutoProgressLabel();
+    renderVirtualMetrics();
   }
 
-  document.addEventListener("keydown", (e) => {
-    if (e.code !== "Space") return;
-    if (isEditableTarget(e.target)) return;
-    e.preventDefault();
-    boostVirtual();
-  });
   tapZone?.addEventListener("pointerdown", (e) => {
     if (isEditableTarget(e.target)) return;
     e.preventDefault();
-    boostVirtual();
+    toggleAutoProgress();
   });
   tapZone?.addEventListener("keydown", (e) => {
     if (e.code !== "Space" && e.code !== "Enter") return;
     e.preventDefault();
-    boostVirtual();
+    toggleAutoProgress();
   });
+  updateAutoProgressLabel();
   setTapZoneVisible(!walker.activeService);
   // Simple beep using Web Audio for turn alerts
   let audioCtx = null;

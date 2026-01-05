@@ -24,8 +24,8 @@
       #hudBar .value { font-weight: 700; font-variant-numeric: tabular-nums; }
       #hudBar .unit { font-size:.78rem; opacity:.85; }
       #turnToast { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); background:#dc2626; color:white; padding: 1rem 1.5rem; border-radius:.5rem; font-size: 2rem; display:none; z-index: 11; box-shadow: 0 6px 18px rgba(220,38,38,.4); pointer-events: none; }
-      #tapZone { position:absolute; left:50%; bottom:calc(12px + env(safe-area-inset-bottom)); transform:translateX(-50%); width:min(520px, 88vw); height:56px; background:rgba(17,24,39,.85); color:white; border-radius: 28px; display:none; align-items:center; justify-content:center; gap:.5rem; font-size:.95rem; z-index: 12; box-shadow: 0 8px 20px rgba(0,0,0,.2); user-select:none; touch-action: manipulation; }
-      #tapZone .hint { opacity:.85; font-size:.8rem; }
+      #tapZone { position:absolute; left:50%; bottom:calc(28px + env(safe-area-inset-bottom)); transform:translateX(-50%); padding:.55rem 1.1rem .6rem; background:rgba(17,24,39,.85); color:white; border-radius: 18px; display:none; flex-direction: column; align-items:center; justify-content:center; gap:.1rem; font-size:.9rem; letter-spacing:.02em; z-index: 12; box-shadow: 0 8px 20px rgba(0,0,0,.2); user-select:none; touch-action: manipulation; }
+      #tapZone .tapzone-prefix { font-size:.72rem; opacity:.8; letter-spacing:.02em; text-transform: none; font-weight: 500; }
       #authToast { position: fixed; left: 50%; top: 72px; transform: translateX(-50%); background:#f8fafc; color:#0f172a; padding: .75rem 1rem; border-radius: .5rem; display:none; z-index: 60; box-shadow: 0 8px 18px rgba(37,99,235,.16); border: none; text-align: center; }
       #authToast .actions { display:inline-flex; gap:.5rem; margin-left: 0; margin-top: .3rem; justify-content: center; }
       #authToast button.ghost { background: #eff6ff; color: #1e3a8a; border-color: #93c5fd; }
@@ -131,8 +131,9 @@
           </div>
         </div>
         <div id="turnToast" role="status" aria-live="polite">Turn!</div>
-        <div id="tapZone" role="button" aria-label="Tap to boost speed" tabindex="0">
-          Tap or hit space key to accelerate
+        <div id="tapZone" role="button" aria-label="Toggle auto progress" tabindex="0">
+          <span id="autoProgressLabel">Auto forward: Off</span>
+          <span class="tapzone-prefix">No sensor</span>
         </div>
         <div id="authToast" role="dialog" aria-live="polite">
           <span>Sign in to save your ride</span>
