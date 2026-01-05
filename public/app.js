@@ -932,11 +932,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   walker.onConnectionChange = (isConnected) => {
     setConnectedUI(isConnected);
     if (isConnected) {
-      virtual.autoEnabled = false;
-      virtual.speedKmh = 0;
-      virtual.pendingM = 0;
-      updateAutoProgressLabel();
-      renderVirtualMetrics();
+      disableAutoProgress();
     }
     setTapZoneVisible(!isConnected);
   };
@@ -958,10 +954,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     distanceM: 0,
     pendingM: 0,
     lastUpdateMs: performance.now(),
+    autoStopTimer: null,
     running: false,
   };
   const AUTO_SPEED_KMH = 15.0;
   const VIRTUAL_STEP_M = 1.0;
+  const AUTO_STOP_MS = 30 * 1000;
   const tapZone = qs("tapZone");
   const autoProgressLabel = qs("autoProgressLabel");
   function setTapZoneVisible(show) {
@@ -993,9 +991,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const dt = Math.max(0, (nowMs - virtual.lastUpdateMs) / 1000);
     virtual.lastUpdateMs = nowMs;
     if (walker.activeService) {
-      virtual.speedKmh = 0;
-      virtual.pendingM = 0;
-      virtual.autoEnabled = false;
+      disableAutoProgress();
       return;
     }
     if (!virtual.autoEnabled) return;
@@ -1028,17 +1024,35 @@ window.addEventListener("DOMContentLoaded", async () => {
     autoProgressLabel.textContent = `Auto forward: ${virtual.autoEnabled ? "On" : "Off"}`;
   }
 
+  function disableAutoProgress() {
+    if (!virtual.autoEnabled) return;
+    virtual.autoEnabled = false;
+    virtual.speedKmh = 0;
+    virtual.pendingM = 0;
+    if (virtual.autoStopTimer) {
+      clearTimeout(virtual.autoStopTimer);
+      virtual.autoStopTimer = null;
+    }
+    updateAutoProgressLabel();
+    renderVirtualMetrics();
+  }
+
   function toggleAutoProgress() {
     if (walker.activeService) return;
-    virtual.autoEnabled = !virtual.autoEnabled;
-    virtual.speedKmh = virtual.autoEnabled ? AUTO_SPEED_KMH : 0;
-    if (virtual.autoEnabled && !virtual.running) {
+    if (virtual.autoEnabled) {
+      disableAutoProgress();
+      return;
+    }
+    virtual.autoEnabled = true;
+    virtual.speedKmh = AUTO_SPEED_KMH;
+    if (virtual.autoStopTimer) clearTimeout(virtual.autoStopTimer);
+    virtual.autoStopTimer = setTimeout(() => {
+      disableAutoProgress();
+    }, AUTO_STOP_MS);
+    if (!virtual.running) {
       virtual.running = true;
       virtual.lastUpdateMs = performance.now();
       requestAnimationFrame(runVirtualLoop);
-    }
-    if (!virtual.autoEnabled) {
-      virtual.pendingM = 0;
     }
     updateAutoProgressLabel();
     renderVirtualMetrics();
