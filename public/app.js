@@ -153,7 +153,11 @@ async function fetchStatus() {
     const res = await fetch(`/api/status`);
     if (!res.ok) throw new Error(`Status ${res.status}`);
     const data = await res.json();
-    return data.status || null;
+    return data.ok ? {
+      status: data.status || null,
+      dailyDistanceMeters: Number.isFinite(data.dailyDistanceMeters) ? data.dailyDistanceMeters : null,
+      day: data.day || null,
+    } : null;
   } catch { return null; }
 }
 
@@ -576,11 +580,23 @@ window.addEventListener("DOMContentLoaded", async () => {
       if (!raw) return null;
       const data = JSON.parse(raw);
       if (!data || !Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return null;
-      return { lat: data.lat, lng: data.lng, heading: Number.isFinite(data.heading) ? data.heading : 0 };
+      return {
+        lat: data.lat,
+        lng: data.lng,
+        heading: Number.isFinite(data.heading) ? data.heading : 0,
+        ts: Number.isFinite(data.ts) ? data.ts : 0,
+      };
     } catch { return null; }
   };
   const saveLastPositionFor = (userId, pos) => {
-    try { localStorage.setItem(lpKey(userId), JSON.stringify(pos)); } catch {}
+    if (!pos || !Number.isFinite(pos.lat) || !Number.isFinite(pos.lng)) return;
+    const next = {
+      lat: pos.lat,
+      lng: pos.lng,
+      heading: Number.isFinite(pos.heading) ? pos.heading : 0,
+      ts: Number.isFinite(pos.ts) ? pos.ts : Date.now(),
+    };
+    try { localStorage.setItem(lpKey(userId), JSON.stringify(next)); } catch {}
   };
 
   let map = null;
@@ -685,9 +701,24 @@ window.addEventListener("DOMContentLoaded", async () => {
   authToast.btnLogin?.addEventListener('click', doLogin);
   authToast.btnClose?.addEventListener('click', () => { setAuthToastVisible(false); });
 
-  // Map init: prefer local last position; fall back to status if logged in
-  const localStart = loadLastPositionFor(sessionUser?.userId);
-  const last = localStart || (sessionUser ? await fetchStatus() : null);
+  const resolveLatestPosition = (localPos, serverPos) => {
+    if (!localPos) return { pos: serverPos || null, preferLocal: false };
+    if (!serverPos) return { pos: localPos, preferLocal: true };
+    const localTs = Number.isFinite(localPos.ts) ? localPos.ts : 0;
+    const serverTs = Number.isFinite(serverPos.ts) ? serverPos.ts : 0;
+    const preferLocal = localTs > serverTs;
+    return { pos: preferLocal ? localPos : serverPos, preferLocal };
+  };
+  const getStartState = async (userId) => {
+    const local = loadLastPositionFor(userId);
+    const statusResp = userId ? await fetchStatus() : null;
+    const server = statusResp?.status || null;
+    return { local, statusResp, resolved: resolveLatestPosition(local, server) };
+  };
+
+  // Map init: prefer server if newer; otherwise keep newer local position
+  const initialStart = await getStartState(sessionUser?.userId);
+  const last = initialStart.resolved.pos;
   const defaultLocation = {lat:35.681296, lng:139.758922, heading: 190}; // Otemachi, Tokyo
   [map, pano] = initMap(last || defaultLocation) || [];
   if (!map || !pano) return;
@@ -725,12 +756,21 @@ window.addEventListener("DOMContentLoaded", async () => {
     distance: qs('distance'),
   };
 
+  const applyServerDailyDistance = (statusResp, preferLocal) => {
+    const serverDay = statusResp?.day || session.dayStr;
+    const serverDistanceM = statusResp?.dailyDistanceMeters;
+    if (Number.isFinite(serverDistanceM) && serverDay === session.dayStr && !preferLocal) {
+      session.dailyDistanceM = serverDistanceM;
+      saveDailyDistanceFor(session.dayStr, session.dailyDistanceM);
+      ui.hdrDayKm.textContent = (session.dailyDistanceM / 1000).toFixed(2);
+    }
+  };
+
   // After login tasks: refresh status and load today's history markers
   async function afterLogin() {
     try {
-      const local = loadLastPositionFor(sessionUser?.userId);
-      const st = await fetchStatus();
-      const next = local || st;
+      const nextStart = await getStartState(sessionUser?.userId);
+      const next = nextStart.resolved.pos;
       if (next && Number.isFinite(next.lat) && Number.isFinite(next.lng)) {
         try {
           pano.setPosition({ lat: next.lat, lng: next.lng });
@@ -740,6 +780,7 @@ window.addEventListener("DOMContentLoaded", async () => {
           session.prevPosition = { lat: next.lat, lng: next.lng };
         } catch {}
       }
+      applyServerDailyDistance(nextStart.statusResp, nextStart.resolved.preferLocal);
       await loadHistoryAndMarkers();
     } catch {}
   }
@@ -1265,8 +1306,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   const saveDailyDistanceFor = (dStr, val) => {
     try { localStorage.setItem(ddKey(dStr), String(val)); } catch {}
   };
-  // Initialize today's distance from localStorage
+  // Initialize today's distance from localStorage or server summary (when newer)
   session.dailyDistanceM = loadDailyDistanceFor(session.dayStr);
+  applyServerDailyDistance(initialStart.statusResp, initialStart.resolved.preferLocal);
   ui.hdrDayKm.textContent = (session.dailyDistanceM/1000).toFixed(2);
 
   // Load today's history and draw markers on mini map (no distance calc)

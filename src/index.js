@@ -443,10 +443,14 @@ async function handleApi(request, env, url) {
       const userId = await getSessionUserId(request, env);
       if (!userId) return json({ error: "unauthorized" }, 401);
       let status = null;
+      let dailyDistanceMeters = 0;
+      let day = today();
       if (env.SVR_DB) {
         status = await getLatestHistoryFromD1(env, userId);
+        const items = await getHistoryFromD1(env, userId, day);
+        dailyDistanceMeters = summarizeHistory(items).distanceMeters || 0;
       }
-      return json({ ok: true, status: status || null });
+      return json({ ok: true, status: status || null, dailyDistanceMeters, day });
     }
     if (request.method === "POST") {
       const body = await safeJson(request);
