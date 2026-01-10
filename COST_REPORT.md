@@ -12,13 +12,13 @@ referenced below.
 - Period: monthly.
 - Active users: 100.
 - Usage per user: 10 days/month, 20 km/day.
-- Street View update interval: 10 m.
+- Street View loads: 2 per active day (Pano initial load only).
 - Worker API requests: 2,000 per user/month.
 - D1 reads: 30 per user/month.
 - D1 writes: 2,000 per user/month (100 m write interval).
 - Auth: once per use day (10 logins per user/month).
 - Maps JS load: 1 per day (10 per user/month).
-- Street View updates use "Dynamic Street View" SKU.
+- Street View loads use "Dynamic Street View" SKU.
 - Maps JS loads use "Dynamic Maps" SKU.
 - D1 row reads/writes are treated as 1 row per request for this estimate.
 
@@ -26,7 +26,7 @@ referenced below.
 
 Per user/month:
 - Distance: 200 km = 200,000 m.
-- Street View updates: 200,000 / 10 = 20,000.
+- Street View loads: 20.
 - Maps JS loads: 10.
 - Worker requests: 2,000.
 - D1 reads: 30.
@@ -38,7 +38,7 @@ Per user/month:
 - KV deletes: 10 (1 delete per login x 10).
 
 100 users/month:
-- Street View updates: 2,000,000.
+- Street View loads: 2,000.
 - Maps JS loads: 1,000.
 - Worker requests: 200,000.
 - D1 reads: 3,000.
@@ -88,26 +88,16 @@ Cloudflare:
 
 Google Maps:
 - Dynamic Maps: 1,000 loads within free cap -> $0.
-- Dynamic Street View: 2,000,000 loads (minus 5,000 free cap)
-  - 95,000 x $14/1,000 = $1,330
-  - 400,000 x $11.20/1,000 = $4,480
-  - 500,000 x $8.40/1,000 = $4,200
-  - 1,000,000 x $4.20/1,000 = $4,200
-  - Total = $14,210
+- Dynamic Street View: 2,000 loads within free cap -> $0.
 
 Total:
-- $14,215 / month for 100 users.
-- $142.15 / user / month.
+- $5 / month for 100 users.
+- $0.05 / user / month.
 
 ## Distance-Based Pricing (Dynamic Street View)
 
-Assuming 10 m updates (100 calls per km):
-- Free Usage Cap: 5,000 calls = 50 km per month (project-wide).
-- After free cap, per-km pricing by volume tier:
-  - Up to 1,000 km equivalent: $1.40 / km ($14.00 per 1,000).
-  - 1,000 - 5,000 km equivalent: $1.12 / km ($11.20 per 1,000).
-  - 5,000 - 10,000 km equivalent: $0.84 / km ($8.40 per 1,000).
-  - 10,000 - 50,000 km equivalent: $0.42 / km ($4.20 per 1,000).
+Not used in this estimate. Street View charges are based on Pano initial loads
+only (2 per active day), not intra-Pano movement.
 
 ## Open Points
 

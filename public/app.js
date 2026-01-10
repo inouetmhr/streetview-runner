@@ -1016,7 +1016,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   };
   const AUTO_SPEED_KMH = 15.0;
   const VIRTUAL_STEP_M = 1.0;
-  const AUTO_STOP_MS = 30 * 1000;
+  const AUTO_STOP_MS = 3 * 60 * 1000;
   const tapZone = qs("tapZone");
   const autoProgressLabel = qs("autoProgressLabel");
   function setTapZoneVisible(show) {
