@@ -150,9 +150,11 @@ class BLEWalker {
 // Auth + API helpers
 async function fetchStatus() {
   try {
+    console.log("api/status: fetch");
     const res = await fetch(`/api/status`);
     if (!res.ok) throw new Error(`Status ${res.status}`);
     const data = await res.json();
+    console.log("api/status: response", data);
     return data.ok ? {
       status: data.status || null,
       dailyDistanceMeters: Number.isFinite(data.dailyDistanceMeters) ? data.dailyDistanceMeters : null,
@@ -718,6 +720,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Map init: prefer server if newer; otherwise keep newer local position
   const initialStart = await getStartState(sessionUser?.userId);
+  const VISIBILITY_SYNC_MS = 60 * 1000;
+  let lastVisibilitySyncAt = Date.now();
   const last = initialStart.resolved.pos;
   const defaultLocation = {lat:35.681296, lng:139.758922, heading: 190}; // Otemachi, Tokyo
   [map, pano] = initMap(last || defaultLocation) || [];
@@ -784,6 +788,18 @@ window.addEventListener("DOMContentLoaded", async () => {
       await loadHistoryAndMarkers();
     } catch {}
   }
+
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState !== "visible") return;
+    const now = Date.now();
+    if (now - lastVisibilitySyncAt < VISIBILITY_SYNC_MS) return;
+    lastVisibilitySyncAt = now;
+    if (!sessionUser) return;
+    await afterLogin();
+    if (historyUI.body?.classList.contains("open")) {
+      await refreshHistoryView();
+    }
+  });
 
   function ensureHistoryMap() {
     if (historyMap || !window.google || !google.maps) return;
