@@ -739,9 +739,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     lastHistorySaved: null,
     turnBlocked: false,
     ignoreNextHistorySave: false,
-    // For header speed measurement
-    prevTimeMs: Date.now(),
-    distSincePrevTimeM: 0,
+    // For buffered EMA-smoothed header speed
+    smoothSpeedMps: 0,           // smoothed speed in m/s
+    lastPositionChangedAt: 0,    // timestamp (ms) of last position_changed
+    speedBuffer: [],             // ring buffer of { moved, ts } for windowed avg
+    decayTimerId: 0,             // setTimeout id for speed decay
     dayStr: new Date().toISOString().slice(0,10),
   };
 
@@ -1236,8 +1238,13 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (moved < 0) return;
     if (moved > 20) { // reset when large changes caused by manual/pegman move on mini map.
       session.distance_togo = 0;
+      session.smoothSpeedMps = 0;
+      session.lastPositionChangedAt = 0;
+      session.speedBuffer = [];
       session.prevPosition = currentPos;
-      return; 
+      ui.hdrSpeed.textContent = "0.0";
+      updateHudTitleVisibility(0);
+      return;
     }
     // Daily distance: persist locally by day
     const currentDay = dayString();
@@ -1251,17 +1258,38 @@ window.addEventListener("DOMContentLoaded", async () => {
       saveDailyDistanceFor(session.dayStr, session.dailyDistanceM);
       ui.hdrDayKm.textContent = (session.dailyDistanceM / 1000).toFixed(2);
     }
-    // Update header speed using distance/time window
-    session.distSincePrevTimeM += moved;
+    // Update header speed using windowed-average + EMA
     const now = Date.now();
-    const diffSec = (now - (session.prevTimeMs || now)) / 1000;
-    if (diffSec > 10) { // update every >10 sec
-      const speedKmh = (session.distSincePrevTimeM / diffSec) * 3.6;
-      ui.hdrSpeed.textContent = (Number.isFinite(speedKmh) ? speedKmh : 0).toFixed(1);
-      updateHudTitleVisibility(speedKmh);
-      session.prevTimeMs = now;
-      session.distSincePrevTimeM = 0;
+    const TAU = 5;          // EMA time constant in seconds
+    const WINDOW = 5;       // buffer window in seconds
+    // Add to ring buffer and trim old entries
+    session.speedBuffer.push({ moved, ts: now });
+    const cutoff = now - WINDOW * 1000;
+    while (session.speedBuffer.length > 0 && session.speedBuffer[0].ts < cutoff) {
+      session.speedBuffer.shift();
     }
+    if (session.lastPositionChangedAt > 0) {
+      const dt = (now - session.lastPositionChangedAt) / 1000;
+      if (dt > 0 && session.speedBuffer.length >= 2) {
+        // Windowed average speed: exclude oldest entry's moved (it's the window start marker)
+        const totalMoved = session.speedBuffer.reduce((s, e) => s + e.moved, 0) - session.speedBuffer[0].moved;
+        const windowDt = (now - session.speedBuffer[0].ts) / 1000;
+        const avgSpeed = windowDt > 0 ? totalMoved / windowDt : moved / dt;
+        const alpha = 1 - Math.exp(-dt / TAU);
+        session.smoothSpeedMps = alpha * avgSpeed + (1 - alpha) * session.smoothSpeedMps;
+      } else if (dt > 0) {
+        // Only 1 sample: fall back to instant speed
+        const alpha = 1 - Math.exp(-dt / TAU);
+        session.smoothSpeedMps = alpha * (moved / dt) + (1 - alpha) * session.smoothSpeedMps;
+      }
+    }
+    session.lastPositionChangedAt = now;
+    const speedKmh = session.smoothSpeedMps * 3.6;
+    ui.hdrSpeed.textContent = (Number.isFinite(speedKmh) ? speedKmh : 0).toFixed(1);
+    updateHudTitleVisibility(speedKmh);
+    // Reset decay timer so it starts exactly 5s after last movement
+    clearTimeout(session.decayTimerId);
+    session.decayTimerId = setTimeout(scheduleSpeedDecay, 5000);
 
     putMarker(session.prevPosition);
     session.prevPosition = currentPos;
@@ -1289,6 +1317,26 @@ window.addEventListener("DOMContentLoaded", async () => {
       }
     }
   });
+
+  // Decay: smoothly reduce speed toward 0 when position_changed stops firing.
+  // Triggered 5s after last movement, then repeats every 5s until speed reaches 0.
+  function scheduleSpeedDecay() {
+    const TAU = 5;
+    const now = Date.now();
+    if (session.lastPositionChangedAt > 0 && session.smoothSpeedMps > 0) {
+      const dt = (now - session.lastPositionChangedAt) / 1000;
+      const alpha = 1 - Math.exp(-dt / TAU);
+      session.smoothSpeedMps = (1 - alpha) * session.smoothSpeedMps;
+      if (session.smoothSpeedMps < 0.01) session.smoothSpeedMps = 0;
+      const speedKmh = session.smoothSpeedMps * 3.6;
+      ui.hdrSpeed.textContent = (Number.isFinite(speedKmh) ? speedKmh : 0).toFixed(1);
+      updateHudTitleVisibility(speedKmh);
+      // Continue decaying if not yet zero
+      if (session.smoothSpeedMps > 0) {
+        session.decayTimerId = setTimeout(scheduleSpeedDecay, 5000);
+      }
+    }
+  }
 
   // BLE controls
   const UNSUPPORTED_BLE_MESSAGE = "Web Bluetooth isn’t supported on Firefox or iOS.";
