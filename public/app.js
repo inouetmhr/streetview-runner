@@ -604,7 +604,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   let map = null;
   let pano = null;
   let historyMap = null;
-  let historyPolyline = null;
+  let historyPolylines = [];
 
   const historyUI = {
     section: qs('historySection'),
@@ -817,33 +817,48 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   function clearHistoryPolyline() {
-    if (historyPolyline) {
-      historyPolyline.setMap(null);
-      historyPolyline = null;
-    }
+    historyPolylines.forEach((pl) => pl.setMap(null));
+    historyPolylines = [];
   }
 
   function drawHistoryPolyline(items) {
     if (!historyMap) return;
     clearHistoryPolyline();
-    const path = items
+    const points = items
       .map((p) => ({ lat: Number(p.lat), lng: Number(p.lng) }))
       .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-    if (!path.length) return;
-    historyPolyline = new google.maps.Polyline({
-      path,
-      strokeColor: "#2563eb",
-      strokeOpacity: 0.9,
-      strokeWeight: 4,
-      map: historyMap,
-    });
-    if (path.length === 1) {
-      historyMap.setCenter(path[0]);
+    if (!points.length) return;
+
+    const MAX_SEGMENT_M = 500;
+    const segments = [];
+    let current = [points[0]];
+    for (let i = 1; i < points.length; i++) {
+      if (distMeters(points[i - 1], points[i]) <= MAX_SEGMENT_M) {
+        current.push(points[i]);
+      } else {
+        if (current.length >= 2) segments.push(current);
+        current = [points[i]];
+      }
+    }
+    if (current.length >= 2) segments.push(current);
+
+    for (const path of segments) {
+      historyPolylines.push(new google.maps.Polyline({
+        path,
+        strokeColor: "#2563eb",
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        map: historyMap,
+      }));
+    }
+
+    if (points.length === 1) {
+      historyMap.setCenter(points[0]);
       historyMap.setZoom(16);
       return;
     }
     const bounds = new google.maps.LatLngBounds();
-    path.forEach((p) => bounds.extend(p));
+    points.forEach((p) => bounds.extend(p));
     historyMap.fitBounds(bounds, 240);
   }
 

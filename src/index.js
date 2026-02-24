@@ -702,12 +702,18 @@ function summarizeHistory(items) {
   if (!Array.isArray(items) || items.length < 2) {
     return { distanceMeters: 0, count: Array.isArray(items) ? items.length : 0 };
   }
+  const MAX_SEGMENT_M = 500;
   let distanceMeters = 0;
   let prev = null;
   for (const item of items) {
     if (!item || !isFinite(item.lat) || !isFinite(item.lng)) continue;
     const current = { lat: Number(item.lat), lng: Number(item.lng) };
-    if (prev) distanceMeters += distMeters(prev, current);
+    if (prev) {
+      const seg = distMeters(prev, current);
+      if (seg <= MAX_SEGMENT_M) {
+        distanceMeters += seg;
+      }
+    }
     prev = current;
   }
   return { distanceMeters, count: items.length };
