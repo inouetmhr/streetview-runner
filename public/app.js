@@ -435,9 +435,9 @@ function initMap(start) {
   return [map, pano];
 }
 
-function chooseForwardLink(pano) {
+function chooseForwardLink(pano, baseHeading) {
   const links = pano.getLinks() || [];
-  const heading = pano.getPov().heading || 0;
+  const heading = Number.isFinite(baseHeading) ? baseHeading : (pano.getPov().heading || 0);
   if (!links.length) return null;
   let best = links[0];
   let bestScore = 999;
@@ -452,6 +452,20 @@ function chooseForwardLink(pano) {
 function angleDelta(a, b) {
   let d = ((b - a + 540) % 360) - 180; // in [-180, 180)
   return d;
+}
+
+function blendHeading(current, target, factor) {
+  if (!Number.isFinite(current)) return target;
+  if (!Number.isFinite(target)) return current;
+  return (current + angleDelta(current, target) * factor + 360) % 360;
+}
+
+function stepHeadingToward(current, target, maxStep) {
+  if (!Number.isFinite(current)) return target;
+  if (!Number.isFinite(target)) return current;
+  const delta = angleDelta(current, target);
+  const step = Math.min(Math.abs(delta), maxStep);
+  return (current + Math.sign(delta) * step + 360) % 360;
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -745,6 +759,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     speedBuffer: [],             // ring buffer of { moved, ts } for windowed avg
     decayTimerId: 0,             // setTimeout id for speed decay
     dayStr: new Date().toISOString().slice(0,10),
+    travelHeading: Number.isFinite(last?.heading) ? last.heading : (pano.getPov()?.heading || defaultLocation.heading),
+    ignorePovUntil: 0,
+    pendingTravelHeading: null,
+    pendingTravelHeadingTimerId: 0,
+    pendingPovAdjustTimerId: 0,
   };
 
   const ui = {
@@ -781,7 +800,11 @@ window.addEventListener("DOMContentLoaded", async () => {
         try {
           pano.setPosition({ lat: next.lat, lng: next.lng });
           if (Number.isFinite(next.heading)) {
-            const pov = pano.getPov() || {}; pov.heading = next.heading; pov.pitch = 0; pano.setPov(pov);
+            const pov = pano.getPov() || {};
+            pov.heading = next.heading;
+            pov.pitch = 0;
+            applyProgrammaticPov(pov, 700);
+            updateTravelHeading(next.heading);
           }
           session.prevPosition = { lat: next.lat, lng: next.lng };
         } catch {}
@@ -1177,29 +1200,84 @@ window.addEventListener("DOMContentLoaded", async () => {
     turnToast.style.display = next;
   }
 
+  function setTurnBlocked(blocked, alert = false) {
+    const changed = session.turnBlocked !== blocked;
+    session.turnBlocked = blocked;
+    showTurnToast(blocked);
+    if (blocked && alert && changed) {
+      beep(180, 880);
+    }
+  }
+
+  function applyProgrammaticPov(nextPov, suppressMs = 500) {
+    clearTimeout(session.pendingTravelHeadingTimerId);
+    session.ignorePovUntil = Date.now() + suppressMs;
+    pano.setPov(nextPov);
+  }
+
+  function schedulePovAdjustment(targetHeading, delayMs = 150) {
+    if (!Number.isFinite(targetHeading)) return;
+    clearTimeout(session.pendingPovAdjustTimerId);
+    session.pendingPovAdjustTimerId = setTimeout(() => {
+      const pov = pano.getPov();
+      const currentHeading = pov?.heading || 0;
+      const viewTurnAngle = Math.abs(angleDelta(currentHeading, targetHeading));
+      if (viewTurnAngle <= 45) return;
+      const nextViewHeading = stepHeadingToward(currentHeading, targetHeading, 20);
+      applyProgrammaticPov({ heading: nextViewHeading, pitch: pov?.pitch || 0 }, 700);
+    }, delayMs);
+  }
+
+  function isTurnBlocked(pano, baseHeading) {
+    const links = pano.getLinks() || [];
+    if (!links.length) return true;
+    const heading = Number.isFinite(baseHeading) ? baseHeading : (pano.getPov()?.heading || 0);
+    const TURN_BLOCK_ANGLE = 80;
+    return !links.some((link) => Math.abs(angleDelta(heading, link.heading || 0)) <= TURN_BLOCK_ANGLE);
+  }
+
+  function updateTravelHeading(nextHeading) {
+    if (!Number.isFinite(nextHeading)) return;
+    session.travelHeading = (nextHeading + 360) % 360;
+    setTurnBlocked(isTurnBlocked(pano, session.travelHeading));
+  }
+
+  function scheduleTravelHeadingCommit(candidateHeading) {
+    if (!Number.isFinite(candidateHeading)) return;
+    const EXPLICIT_TURN_MIN_ANGLE = 30;
+    if (Math.abs(angleDelta(session.travelHeading, candidateHeading)) < EXPLICIT_TURN_MIN_ANGLE) return;
+    session.pendingTravelHeading = candidateHeading;
+    clearTimeout(session.pendingTravelHeadingTimerId);
+    session.pendingTravelHeadingTimerId = setTimeout(() => {
+      const settledHeading = pano.getPov()?.heading;
+      if (!Number.isFinite(settledHeading)) return;
+      if (Math.abs(angleDelta(session.travelHeading, settledHeading)) < EXPLICIT_TURN_MIN_ANGLE) return;
+      updateTravelHeading(settledHeading);
+    }, 300);
+  }
+
+  pano.addListener("pov_changed", () => {
+    const heading = pano.getPov()?.heading;
+    if (!Number.isFinite(heading)) return;
+    if (Date.now() < session.ignorePovUntil) return;
+    scheduleTravelHeadingCommit(heading);
+  });
+
   function advance() {
-    //console.log("advancing...");
-    const link = chooseForwardLink(pano);
+    const baseHeading = session.travelHeading;
+    const link = chooseForwardLink(pano, baseHeading);
     if (!link) return;
     const pov = pano.getPov();
-    const turnAngle = Math.abs(angleDelta(pov.heading || 0, link.heading || 0));
-    // If a large turn is needed, block advancement and alert the user
+    const turnAngle = Math.abs(angleDelta(baseHeading, link.heading || 0));
     if (turnAngle > 80) {
       console.log("turn blocked. angle: " + turnAngle);
-      beep(180, 880);
-      showTurnToast(true);
-      session.turnBlocked = true;
+      setTurnBlocked(true, true);
       return;
     }
-    // Clear any previous turn block UI
-    if (session.turnBlocked) { showTurnToast(false); }
-    session.turnBlocked = false;
-    // Move forward, invoking link_changed event.
+    setTurnBlocked(false);
+    updateTravelHeading(blendHeading(session.travelHeading, link.heading || baseHeading, 0.2));
     pano.setPano(link.pano);
-    // If the turn is significant, align the view to the link heading
-    if (turnAngle > 45) {
-      pano.setPov({heading: link.heading || pov.heading, pitch: 0 });
-    }
+    schedulePovAdjustment(link.heading || pov.heading || 0, 150);
   }
   window.advance = advance; // for debug
 
@@ -1221,15 +1299,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   pano.addListener("links_changed", () => {
     const rest_togo = session.distance_togo;
     console.log(`links_changed. rest to go: ${rest_togo.toFixed(1)}`);
-    // Evaluate turn feasibility for the next step
-    const link = chooseForwardLink(pano);
-    const pov = pano.getPov();
-    const turnAngle = link ? Math.abs(angleDelta(pov.heading || 0, link.heading || 0)) : 0;
-    session.turnBlocked = link ? (turnAngle > 80) : false;
-    // Show when blocked; hide when unblocked
-    showTurnToast(session.turnBlocked);
-    if (session.turnBlocked) { beep(180, 880); }
-    if (rest_togo > 0 && !session.turnBlocked) {
+    const blocked = isTurnBlocked(pano, session.travelHeading);
+    setTurnBlocked(blocked, blocked);
+    if (rest_togo > 0 && !blocked) {
       advance();
     }
   });
@@ -1414,6 +1486,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
   if (sessionUser) await loadHistoryAndMarkers();
   if (sessionUser) await refreshPasskeys();
+  setTurnBlocked(isTurnBlocked(pano, session.travelHeading));
   function refreshPanoLayout() {
     if (!pano || !window.google?.maps?.event) return;
     try { google.maps.event.trigger(pano, "resize"); } catch {}
@@ -1421,7 +1494,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       const pos = pano.getPosition();
       if (pos) pano.setPosition(pos);
       const pov = pano.getPov();
-      if (pov) pano.setPov({ heading: pov.heading || 0, pitch: pov.pitch || 0, zoom: pov.zoom || 1 });
+      if (pov) applyProgrammaticPov({ heading: pov.heading || 0, pitch: pov.pitch || 0, zoom: pov.zoom || 1 }, 300);
     } catch {}
   }
   // Side pane toggle: hidden by default; show with side-open on all screens
