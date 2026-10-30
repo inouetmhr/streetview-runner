@@ -57,17 +57,6 @@ async function getStatus({ env, url, userId }) {
   return json({ ok: true, status: status || null, dailyDistanceMeters, day });
 }
 
-// Kept for API compatibility; status derives from history, so nothing is stored.
-async function postStatus({ request }) {
-  const body = await safeJson(request);
-  if (!body || typeof body !== "object") return json({ error: "invalid json" }, 400);
-  const location = body.location;
-  if (!location || !isValidLatLng(Number(location.lat), Number(location.lng))) {
-    return json({ error: "valid lat,lng required" }, 400);
-  }
-  return json({ ok: true });
-}
-
 async function getHistory({ env, url, userId }) {
   const { searchParams } = url;
   if (!env.SVR_DB) return json({ ok: true, items: [], summary: { distanceMeters: 0, count: 0 } });
@@ -109,6 +98,6 @@ async function postHistory({ request, env, userId }) {
 }
 
 export const HISTORY_ROUTES = {
-  "/api/status": { GET: requireSession(getStatus), POST: authedWrite(postStatus) },
+  "/api/status": { GET: requireSession(getStatus) },
   "/api/history": { GET: requireSession(getHistory), POST: authedWrite(postHistory) },
 };

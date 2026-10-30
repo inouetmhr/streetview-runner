@@ -70,7 +70,7 @@ async function putSession(env, token, session) {
 async function createSession(env, userId, credentialId) {
   const token = randomToken();
   const now = Date.now();
-  await putSession(env, token, { userId, credentialId: credentialId || null, createdAt: now, renewedAt: now });
+  await putSession(env, token, { userId, credentialId, createdAt: now, renewedAt: now });
   return sessionCookie(token);
 }
 
@@ -101,8 +101,7 @@ export function requireSession(fn) {
     const session = token ? await getKV(env, sessionKey(token)) : null;
     if (!session?.userId) return json({ error: "unauthorized" }, 401);
     const user = await getUser(env, session.userId);
-    const credentialOk = user && (!session.credentialId || hasCredential(user, normalizeCredentialIdString(session.credentialId)));
-    if (!credentialOk) {
+    if (!user || !hasCredential(user, normalizeCredentialIdString(session.credentialId))) {
       await delKV(env, sessionKey(token));
       return json({ error: "unauthorized" }, 401, { "Set-Cookie": CLEAR_SESSION_COOKIE });
     }
@@ -275,7 +274,7 @@ async function passkeyAddOptions({ env, url, userId, user }) {
   return json({ ok: true, options, flowId });
 }
 
-async function passkeyAddVerify({ request, env, url, userId }) {
+async function passkeyAddVerify({ request, env, url, userId, user }) {
   const body = await readFlowBody(request);
   if (!body) return json({ error: "invalid json" }, 400);
   const flow = await takeFlow(env, passkeyAddChallengeKey(String(body.flowId)));
@@ -284,8 +283,6 @@ async function passkeyAddVerify({ request, env, url, userId }) {
   try {
     const credential = await verifyNewCredential(url, flow, body);
     if (!credential) return json({ error: "verification failed" }, 400);
-    const user = await getUser(env, userId);
-    if (!user) return json({ error: "unknown user" }, 404);
     user.credentials = user.credentials || [];
     if (user.credentials.some((cred) => cred.id === credential.id)) {
       return json({ error: "credential already registered" }, 400);
