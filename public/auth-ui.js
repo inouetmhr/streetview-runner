@@ -9,8 +9,7 @@ import {
   deletePasskey,
   renamePasskey,
 } from "./api.js";
-
-function qs(id) { return document.getElementById(id); }
+import { qs } from "./dom.js";
 
 // Generate friendly display names like "Blue Dragon"
 export function generateFriendlyName() {
@@ -58,19 +57,12 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
     uiUser.passkeyList.innerHTML = '';
     passkeyItems.forEach((item, index) => {
       const row = document.createElement('div');
-      row.style.display = 'flex';
-      row.style.justifyContent = 'space-between';
-      row.style.alignItems = 'center';
-      row.style.gap = '.5rem';
-      row.style.margin = '.2rem 0';
+      row.className = 'passkey-row';
       const currentLabel = item.label ? item.label : `Passkey ${index + 1}`;
       const left = document.createElement('div');
-      left.style.display = 'flex';
-      left.style.alignItems = 'center';
-      left.style.gap = '.35rem';
+      left.className = 'passkey-name';
       const actions = document.createElement('div');
-      actions.style.display = 'flex';
-      actions.style.gap = '.35rem';
+      actions.className = 'passkey-actions';
       const btnRename = document.createElement('button');
       btnRename.className = 'ghost small btn-edit';
       btnRename.textContent = 'Edit';

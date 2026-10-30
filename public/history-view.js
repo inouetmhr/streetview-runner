@@ -8,10 +8,7 @@ import {
   getWeekRangeUTC,
   getMonthRangeUTC,
 } from "./geo.js";
-
-const MAP_ID = "fcf78f824472c3b8";
-
-function qs(id) { return document.getElementById(id); }
+import { qs, MAP_ID } from "./dom.js";
 
 function getLocaleFirstDayIndex() {
   try {

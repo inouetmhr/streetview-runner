@@ -5,7 +5,6 @@ class Metrics {
     this.speedKmh = 0; // km/h
     this.cadenceRpm = 0; // rpm
     this.distanceM = 0; // meters
-    this.prevDistance = null;
   }
 }
 
@@ -65,7 +64,7 @@ export class BLEWalker {
     } catch { return false; }
   }
   _onFTMS(dv) {
-    const data = this._parseIndoorBikeData(dv);
+    const data = parseIndoorBikeData(dv);
     if (data.instantaneous_cadence != null) {
       this.sensors.cadenceRpm = Math.round(data.instantaneous_cadence);
     }
@@ -76,71 +75,71 @@ export class BLEWalker {
       this.sensors.distanceM = data.total_distance;
     }
   }
-  
-  _parseIndoorBikeData(dataView) {
-    //SPEC: https://btprodspecificationrefs.blob.core.windows.net/gatt-specification-supplement/GATT_Specification_Supplement.pdf
-    let flags = dataView.getUint16(0, true);
-    let index = 2;
-    let result = {};
-    if (flags & (1 << 0)) { // More Data; there is an additinal data record
-        // not supported yet
-    } else { // instead, instantaneous_speed present 
-        result.instantaneous_speed = dataView.getUint16(index, true) * 0.01;  // Unit: km/h
-    }
+}
+
+// Parses an FTMS Indoor Bike Data (0x2AD2) notification.
+export function parseIndoorBikeData(dataView) {
+  //SPEC: https://btprodspecificationrefs.blob.core.windows.net/gatt-specification-supplement/GATT_Specification_Supplement.pdf
+  const flags = dataView.getUint16(0, true);
+  let index = 2;
+  const result = {};
+  // Bit 0 is "More Data": when set, Instantaneous Speed is omitted from this record.
+  if (!(flags & (1 << 0))) {
+    result.instantaneous_speed = dataView.getUint16(index, true) * 0.01;  // Unit: km/h
     index += 2;
-    if (flags & (1 << 1)) {
-        result.average_speed = dataView.getUint16(index, true) * 0.01;  // Unit: km/h
-        index += 2;
-    }
-    if (flags & (1 << 2)) {
-        result.instantaneous_cadence = dataView.getUint16(index, true) * 0.5;  // Unit: RPM
-        index += 2;
-    }
-    if (flags & (1 << 3)) {
-        result.average_cadence = dataView.getUint16(index, true) * 0.5;  // Unit: RPM
-        index += 2;
-    }
-    if (flags & (1 << 4)) {
-        result.total_distance = 
-            dataView.getUint8(index) | 
-            (dataView.getUint8(index + 1) << 8) | 
-            (dataView.getUint8(index + 2) << 16);  // Unit: meter
-        index += 3;
-    }
-    if (flags & (1 << 5)) {
-        result.resistance_level = dataView.getUint8(index, true);
-        index += 1;
-    }
-    if (flags & (1 << 6)) {
-        result.instantaneous_power = dataView.getUint16(index, true);  // Unit: Watt
-        index += 2;
-    }
-    if (flags & (1 << 7)) {
-        result.average_power = dataView.getUint16(index, true);  // Unit: Watt
-        index += 2;
-    }
-    if (flags & (1 << 8)) {
-        result.total_energy = dataView.getUint16(index, true);  // Unit: kCal
-        result.energy_per_hour = dataView.getUint16(index+2, true);  // Unit: kCal
-        result.energy_per_minute = dataView.getUint8(index+4, true);  // Unit: kCal
-        index += 5;
-    }
-    if (flags & (1 << 9)) {
-        result.heart_rate = dataView.getUint8(index);  // Unit: BPM
-        index += 1;
-    }
-    if (flags & (1 << 10)) {
-        result.metabolic_equivalent = dataView.getUint8(index) * 0.1;  // Unit: METs
-        index += 1;
-    }
-    if (flags & (1 << 11)) {
-        result.elapsed_time = dataView.getUint16(index, true);  // Unit: sec
-        index += 2;
-    }
-    if (flags & (1 << 12)) {
-        result.remaining_time = dataView.getUint16(index, true);  // Unit: sec
-        index += 2;
-    }
-    return result;
   }
+  if (flags & (1 << 1)) {
+    result.average_speed = dataView.getUint16(index, true) * 0.01;  // Unit: km/h
+    index += 2;
+  }
+  if (flags & (1 << 2)) {
+    result.instantaneous_cadence = dataView.getUint16(index, true) * 0.5;  // Unit: RPM
+    index += 2;
+  }
+  if (flags & (1 << 3)) {
+    result.average_cadence = dataView.getUint16(index, true) * 0.5;  // Unit: RPM
+    index += 2;
+  }
+  if (flags & (1 << 4)) {
+    result.total_distance = 
+        dataView.getUint8(index) | 
+        (dataView.getUint8(index + 1) << 8) | 
+        (dataView.getUint8(index + 2) << 16);  // Unit: meter
+    index += 3;
+  }
+  if (flags & (1 << 5)) {
+    result.resistance_level = dataView.getUint8(index, true);
+    index += 1;
+  }
+  if (flags & (1 << 6)) {
+    result.instantaneous_power = dataView.getUint16(index, true);  // Unit: Watt
+    index += 2;
+  }
+  if (flags & (1 << 7)) {
+    result.average_power = dataView.getUint16(index, true);  // Unit: Watt
+    index += 2;
+  }
+  if (flags & (1 << 8)) {
+    result.total_energy = dataView.getUint16(index, true);  // Unit: kCal
+    result.energy_per_hour = dataView.getUint16(index+2, true);  // Unit: kCal
+    result.energy_per_minute = dataView.getUint8(index+4, true);  // Unit: kCal
+    index += 5;
+  }
+  if (flags & (1 << 9)) {
+    result.heart_rate = dataView.getUint8(index);  // Unit: BPM
+    index += 1;
+  }
+  if (flags & (1 << 10)) {
+    result.metabolic_equivalent = dataView.getUint8(index) * 0.1;  // Unit: METs
+    index += 1;
+  }
+  if (flags & (1 << 11)) {
+    result.elapsed_time = dataView.getUint16(index, true);  // Unit: sec
+    index += 2;
+  }
+  if (flags & (1 << 12)) {
+    result.remaining_time = dataView.getUint16(index, true);  // Unit: sec
+    index += 2;
+  }
+  return result;
 }
