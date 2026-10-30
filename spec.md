@@ -25,9 +25,6 @@
 - GET `/api/status?day=YYYY-MM-DD`
   - 200 `{ ok: true, status: { lat:number, lng:number, heading:number, ts:number }, dailyDistanceMeters:number, day:string }`
   - With D1 enabled, status is derived from the latest history point (any day). `dailyDistanceMeters` sums the given ride day (defaults to the server's UTC day).
-- POST `/api/status`
-  - Body `{ location:{ lat:number, lng:number, heading?:number } }`
-  - 200 `{ ok: true }`; 400 on invalid/missing fields. No server-side persistence; kept for compatibility and not called by the client.
 - GET `/api/history?day=YYYY-MM-DD`
   - 200 `{ ok: true, items: Array<{ lat,lng,heading,ts }>, summary:{ distanceMeters:number, count:number } }`; day defaults to today.
 - GET `/api/history?from=YYYY-MM-DD&to=YYYY-MM-DD`
@@ -44,7 +41,7 @@
 - History rows written before this change use UTC days; they are not migrated.
 
 ### Authentication (Passkey)
-- Library: `@simplewebauthn/server@^13` (server) and optionally `@simplewebauthn/browser@^13` (client).
+- Library: `@simplewebauthn/server@^14` (server) and `@simplewebauthn/browser@14` (client, self-hosted in `public/vendor/`).
 - Endpoints:
   - GET `/api/auth/session` → `{ ok:true, user:{ userId, username } }` or 401 when no valid session.
   - POST `/api/auth/register/options` → returns `{ ok:true, options, flowId }`. Server generates `userId` and uses byte `userID` for WebAuthn.
@@ -150,7 +147,7 @@ Notes:
   - The browser library is self-hosted (`public/vendor/`, built by `npm run vendor`), not loaded from a CDN.
 - Sessions:
   - KV entries expire after ≈1 year (`expirationTtl`); the expiry and cookie `Max-Age` slide forward at most once per 30 days of use, approximating “never expire”.
-  - A session is valid only while its passkey is still registered: removing a passkey (or the user) signs out the devices that used it (401 + cleared cookie).
+  - Every session records the passkey (`credentialId`) it was created with, and is valid only while that passkey is still registered: removing a passkey (or the user) signs out the devices that used it (401 + cleared cookie). Sessions without a `credentialId` are rejected the same way.
 - Request checks:
   - Every POST must carry `Origin` equal to the app origin (400 otherwise) and, when it has a content type, `application/json` (415 otherwise). This covers same-site subdomains that `SameSite=Lax` does not.
   - Rate limits (Workers Rate Limiting bindings): `AUTH_LIMITER` 10/min per client IP for unauthenticated register/login steps; `WRITE_LIMITER` 30/min per user for signed-in writes. Over the limit → 429 with `Retry-After`.
@@ -186,7 +183,7 @@ Notes:
    - Edit username: `POST /api/auth/username` updates display name; side pane reflects change.
 
 ## Deliverables
-- Frontend: `public/index.html` and ES modules: `app.js` (entry, Street View movement), `ble.js` (FTMS), `api.js` (Worker API client), `geo.js` (geometry/dates, shared with the Worker), `auth-ui.js`, `history-view.js`.
+- Frontend: `public/index.html` and ES modules: `app.js` (entry, Street View movement and wiring), `ble.js` (FTMS client and `parseIndoorBikeData`), `api.js` (Worker API client), `geo.js` (geometry/dates, shared with the Worker), `speed-meter.js` (header speed smoothing), `virtual-rider.js` (Auto forward), `trail.js` (mini map trail), `ride-storage.js` (localStorage), `dom.js` (shared DOM helpers), `auth-ui.js`, `history-view.js`.
 - Worker: `src/index.js` (entry + route table), `src/auth.js`, `src/history.js`, `src/lib.js`.
 - Tests: `src/__tests__/*.test.js` (vitest, `npm test`).
 - Docs: this spec at `/spec.md`.

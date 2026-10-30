@@ -16,6 +16,12 @@ describe("API routing", () => {
     expect(res.headers.get("Allow")).toBe("GET, POST");
   });
 
+  it("serves /api/status as GET only", async () => {
+    const res = await call("/api/status", { method: "POST" });
+    expect(res.status).toBe(405);
+    expect(res.headers.get("Allow")).toBe("GET");
+  });
+
   it("rejects protected routes without a session", async () => {
     expect((await call("/api/status")).status).toBe(401);
     expect((await call("/api/history?day=2026-10-30")).status).toBe(401);

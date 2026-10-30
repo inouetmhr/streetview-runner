@@ -57,6 +57,13 @@ describe("session validation", () => {
     expect(env.SVR_KV.store.has("sess:v1:tok")).toBe(false);
   });
 
+  it("revokes a legacy session that has no passkey id", async () => {
+    seedUser({ session: { credentialId: undefined } });
+    const res = await call("/api/auth/session", { headers: withSession() });
+    expect(res.status).toBe(401);
+    expect(env.SVR_KV.store.has("sess:v1:tok")).toBe(false);
+  });
+
   it("revokes a session whose user no longer exists", async () => {
     seedUser();
     env.SVR_KV.store.delete("user:v1:u1");

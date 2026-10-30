@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { angleDelta, rideDay, splitSegments, getWeekRangeUTC, getMonthRangeUTC } from "../../public/geo.js";
+import { resolveLatestPosition } from "../../public/ride-storage.js";
 
 // `npm test` runs with TZ=Asia/Tokyo so local-time behavior is deterministic.
 describe("rideDay", () => {
@@ -39,5 +40,18 @@ describe("date ranges", () => {
   });
   it("computes a month", () => {
     expect(getMonthRangeUTC("2026-02")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+  });
+});
+
+describe("resolveLatestPosition", () => {
+  const local = { lat: 1, lng: 1, ts: 200 };
+  const server = { lat: 2, lng: 2, ts: 100 };
+  it("prefers the newer of the local and server positions", () => {
+    expect(resolveLatestPosition(local, server)).toEqual({ pos: local, preferLocal: true });
+    expect(resolveLatestPosition({ ...local, ts: 50 }, server)).toEqual({ pos: server, preferLocal: false });
+  });
+  it("falls back to whichever exists", () => {
+    expect(resolveLatestPosition(null, server)).toEqual({ pos: server, preferLocal: false });
+    expect(resolveLatestPosition(local, null)).toEqual({ pos: local, preferLocal: true });
   });
 });
