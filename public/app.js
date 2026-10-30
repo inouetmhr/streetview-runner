@@ -219,6 +219,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     dayStr: rideDay(),
     travelHeading: Number.isFinite(last?.heading) ? last.heading : (pano.getPov()?.heading || DEFAULT_LOCATION.heading),
     ignorePovUntil: 0,
+    linksReady: false, // false from a panorama change until its links arrive
     pendingTravelHeadingTimerId: 0,
     pendingPovAdjustTimerId: 0,
   };
@@ -439,6 +440,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // ---------- Heading and turns ----------
   function setTurnBlocked(blocked, alert = false) {
+    // Before a panorama's links arrive it looks like a dead end; do not flash the prompt.
+    if (!session.linksReady) blocked = false;
     const changed = session.turnBlocked !== blocked;
     session.turnBlocked = blocked;
     if (ui.turnToast) ui.turnToast.style.display = blocked ? "block" : "none";
@@ -588,7 +591,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  pano.addListener("pano_changed", () => { session.linksReady = false; });
   pano.addListener("links_changed", () => {
+    session.linksReady = true;
     const restToGo = session.distanceToGo;
     console.log(`links_changed. rest to go: ${restToGo.toFixed(1)}`);
     const blocked = isTurnBlocked(pano, session.travelHeading);
