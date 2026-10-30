@@ -562,7 +562,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
     // Daily distance: persist locally by day
-    const currentDay = dayString();
+    const currentDay = rideDay();
     if (currentDay !== session.dayStr) {
       // Day rolled over: switch accumulator to today's stored value
       session.dayStr = currentDay;
