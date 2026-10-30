@@ -1,7 +1,7 @@
 /* Worker API client: status, history and passkey auth */
 
-// Pinned so a new @13.x release cannot change auth behavior unnoticed.
-const SIMPLEWEBAUTHN_BROWSER_URL = "https://esm.sh/@simplewebauthn/browser@13.3.0";
+// Self-hosted copy (see `npm run vendor`) so no third-party CDN code runs on the signed-in page.
+const SIMPLEWEBAUTHN_BROWSER_URL = "./vendor/simplewebauthn-browser.js";
 
 async function getJson(path) {
   const res = await fetch(path);

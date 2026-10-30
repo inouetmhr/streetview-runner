@@ -7,13 +7,15 @@
     "dev": "wrangler dev",
     "preview": "wrangler dev --remote",
     "deploy": "wrangler deploy",
-    "test": "TZ=Asia/Tokyo vitest run"
+    "test": "TZ=Asia/Tokyo vitest run",
+    "vendor": "esbuild node_modules/@simplewebauthn/browser/esm/index.js --bundle --format=esm --minify --legal-comments=inline --outfile=public/vendor/simplewebauthn-browser.js \"--banner:js=/* @simplewebauthn/browser (MIT), bundled by npm run vendor. Do not edit. */\""
   },
   "devDependencies": {
-    "vitest": "^3.2.7",
-    "wrangler": "^4.76.0"
+    "@simplewebauthn/browser": "13.3.0",
+    "vitest": "^5.0.5",
+    "wrangler": "^4.156.0"
   },
   "dependencies": {
-    "@simplewebauthn/server": "^13.1.2"
+    "@simplewebauthn/server": "^13.3.3"
   }
 }
