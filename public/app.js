@@ -35,6 +35,7 @@ const HISTORY_SAVE_DISTANCE_M = 100;
 const SPEED_DECAY_DELAY_MS = 5000; // start (and repeat) decaying this long after the last movement
 const VISIBILITY_SYNC_MS = 60 * 1000;
 const UNSUPPORTED_BLE_MESSAGE = "Web Bluetooth isn’t supported on Firefox or iOS.";
+const SENSOR_CHIP_COLLAPSE_MS = 3000; // show the sensor name briefly, then shrink to an icon
 
 // The Maps loader runs with loading=async, so classes are available only after importLibrary.
 async function loadMapsLibraries() {
@@ -142,9 +143,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     return { lat, lng, heading: Number.isFinite(heading) ? heading : 0 };
   };
 
-  function setTapZoneVisible(show) {
-    document.body.classList.toggle("tapzone-visible", show && !isHistoryOpen);
-  }
   function setAuthToastVisible(show) {
     document.body.classList.toggle("auth-visible", show && !isHistoryOpen);
   }
@@ -184,7 +182,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   let lastVisibilitySyncAt = Date.now();
   const last = initialStart.resolved.pos;
   if (mapsReady) [map, pano] = initMap(last || DEFAULT_LOCATION) || [];
-  if (!map || !pano) return;
+  if (!map || !pano) {
+    notify("Could not load the map. Check your connection and reload the page.", { kind: "error", sticky: true });
+    return;
+  }
   const trail = createTrail(map);
   const speedMeter = createSpeedMeter();
   const wakeLock = createWakeLock();
@@ -210,7 +211,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     hdrSpeed: qs("hdrSpeed"),
     hdrDayKm: qs("hdrDayKm"),
     connectBtn: qs("connectBtn"),
+    rideControl: qs("rideControl"),
+    sensorChip: qs("sensorChip"),
+    sensorChipText: qs("sensorChipText"),
     togglePane: qs("togglePane"),
+    sideBackdrop: qs("sideBackdrop"),
     hudBar: qs("hudBar"),
     tapZone: qs("tapZone"),
     autoProgressLabel: qs("autoProgressLabel"),
@@ -233,7 +238,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     onOpenChange: (open) => {
       isHistoryOpen = open;
       setAuthToastVisible(!auth.getUser());
-      setTapZoneVisible(!walker.activeService);
     },
   });
 
@@ -335,19 +339,48 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  // Bottom ride control: "idle" shows Connect + Auto forward, "connecting" disables
+  // Connect, "connected" shows the sensor name and then shrinks to a small icon so it
+  // stays out of the view, "reconnecting" stays expanded and highlighted.
+  let sensorChipTimer = 0;
+  function setRideState(state, text = "") {
+    ui.rideControl.dataset.state = state;
+    ui.connectBtn.disabled = state === "connecting";
+    ui.connectBtn.textContent = state === "connecting" ? "ᛒ Connecting…" : "ᛒ Connect sensor";
+    ui.sensorChipText.textContent = text;
+    ui.sensorChip.classList.remove("compact");
+    clearTimeout(sensorChipTimer);
+    if (state === "connected") {
+      sensorChipTimer = setTimeout(() => ui.sensorChip.classList.add("compact"), SENSOR_CHIP_COLLAPSE_MS);
+    }
+  }
+  const connectedText = () => `${walker.device?.name || "Sensor"} · Connected`;
+
   const walker = new BLEWalker();
   let prevSensorDistanceM = null;
   walker.onConnectionChange = (isConnected) => {
-    ui.connectBtn.style.display = isConnected ? "none" : "";
+    setRideState(isConnected ? "connected" : "idle", isConnected ? connectedText() : "");
     if (isConnected) virtualRider.disable();
-    setTapZoneVisible(!isConnected);
     updateWakeLock();
   };
-  walker.onReconnect = (state) => {
-    if (state === "reconnecting") notify("Sensor disconnected. Reconnecting…", { kind: "error" });
-    else if (state === "reconnected") notify("Sensor reconnected.");
-    else notify("Sensor connection lost. Tap Connect Sensor to try again.", { kind: "error" });
+  walker.onStatus = (text) => {
+    if (ui.rideControl.dataset.state === "reconnecting") ui.sensorChipText.textContent = text;
   };
+  walker.onReconnect = (state) => {
+    if (state === "reconnecting") {
+      setRideState("reconnecting", "Reconnecting…");
+      notify("Sensor disconnected. Reconnecting…", { kind: "error" });
+    } else if (state === "reconnected") {
+      notify("Sensor reconnected.");
+    } else {
+      notify("Sensor connection lost. Tap Connect sensor to try again.", { kind: "error" });
+    }
+  };
+  // Tapping the icon shows the sensor name again for a moment.
+  ui.sensorChip.addEventListener("click", () => {
+    if (ui.rideControl.dataset.state === "connected") setRideState("connected", connectedText());
+  });
+  if (!navigator.bluetooth) ui.connectBtn.hidden = true; // Firefox, iOS: Auto forward only
   walker.onData = () => {
     const total = walker.sensors.distanceM || 0;
     if (prevSensorDistanceM == null) prevSensorDistanceM = total;
@@ -388,7 +421,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     virtualRider.toggle();
   });
   if (ui.autoProgressLabel) ui.autoProgressLabel.textContent = "Auto forward: Off";
-  setTapZoneVisible(!walker.activeService);
 
   // ---------- Heading and turns ----------
   function setTurnBlocked(blocked, alert = false) {
@@ -598,8 +630,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   async function doConnect() {
     try {
       deviceStatus.status.textContent = "Connecting…";
+      setRideState("connecting");
       await walker.connect();
     } catch (e) {
+      setRideState("idle");
       const message = String(e?.message || e);
       if (e?.name === "NotFoundError") {
         deviceStatus.status.textContent = message;
@@ -647,9 +681,21 @@ window.addEventListener("DOMContentLoaded", async () => {
       if (pov) applyProgrammaticPov({ heading: pov.heading || 0, pitch: pov.pitch || 0, zoom: pov.zoom || 1 }, 300);
     } catch {}
   }
-  // Side pane toggle: hidden by default; show with side-open on all screens
-  ui.togglePane.addEventListener("click", () => {
-    document.body.classList.toggle("side-open");
+  // Side pane: hidden by default. History lives inside the pane, so closing the
+  // pane also closes history and brings Street View back.
+  function setSideOpen(open) {
+    if (document.body.classList.contains("side-open") === open) return;
+    if (!open) historyView.close();
+    document.body.classList.toggle("side-open", open);
+    ui.togglePane.textContent = open ? "×" : "☰";
+    ui.togglePane.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    ui.togglePane.setAttribute("aria-expanded", String(open));
     requestAnimationFrame(() => refreshPanoLayout());
+  }
+  ui.togglePane.addEventListener("click", () => setSideOpen(!document.body.classList.contains("side-open")));
+  ui.sideBackdrop?.addEventListener("click", () => setSideOpen(false));
+  document.addEventListener("keydown", (e) => {
+    // Esc that cancelled an inline edit or closed the dialog does not also close the pane.
+    if (e.key === "Escape" && !e.defaultPrevented && !qs("appDialog")?.open) setSideOpen(false);
   });
 });

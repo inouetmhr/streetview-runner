@@ -49,7 +49,7 @@ function getLocaleFirstDayIndex() {
  * - getUser() returns the signed-in user or null.
  * - center is the initial map center before any history is drawn.
  * - onOpenChange(open) runs whenever the view opens or closes.
- * Returns { refresh, isBodyOpen }.
+ * Returns { refresh, isBodyOpen, close }.
  */
 export function createHistoryView({ getUser, center, onOpenChange }) {
   const historyUI = {
@@ -267,5 +267,9 @@ export function createHistoryView({ getUser, center, onOpenChange }) {
   if (historyUI.inputMonth) historyUI.inputMonth.value = today.slice(0, 7);
   updateHistoryModeButtons();
 
-  return { refresh, isBodyOpen };
+  return {
+    refresh,
+    isBodyOpen,
+    close: () => { if (isBodyOpen()) setHistoryOpen(false); },
+  };
 }

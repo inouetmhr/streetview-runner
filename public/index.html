@@ -55,15 +55,28 @@
       #appDialog .dialog-actions { display:flex; flex-direction:row-reverse; gap:.5rem; margin-top:.9rem; }
       #appDialog button.danger { background:#b91c1c; border-color:#b91c1c; }
       .inline-edit { font:inherit; padding:.15rem .35rem; width:min(100%, 12rem); }
-      #tapZone { position:absolute; left:50%; bottom:calc(28px + env(safe-area-inset-bottom)); transform:translateX(-50%); padding:.55rem 1.1rem .6rem; background:rgba(17,24,39,.85); color:white; border-radius: 18px; display:none; flex-direction: column; align-items:center; justify-content:center; gap:.1rem; font-size:.9rem; letter-spacing:.02em; z-index: 12; box-shadow: 0 8px 20px rgba(0,0,0,.2); user-select:none; touch-action: manipulation; }
+      #rideControl { position:absolute; left:50%; bottom:calc(28px + env(safe-area-inset-bottom)); transform:translateX(-50%); display:flex; align-items:center; gap:.5rem; z-index:12; }
+      #rideControl .ride-connect { height:44px; padding:0 1rem; border-radius:18px; border:none; background:#2563eb; color:#f8fafc; font-weight:700; white-space:nowrap; box-shadow:0 8px 18px rgba(37,99,235,.35); }
+      #rideControl .ride-connect:disabled { opacity:.7; cursor:default; }
+      #rideControl .sensor-chip { display:none; align-items:center; gap:.4rem; height:36px; padding:0 .9rem; border-radius:18px; border:none; background:rgba(17,24,39,.72); color:#f8fafc; font-size:.85rem; white-space:nowrap; box-shadow:0 6px 16px rgba(0,0,0,.2); transition:opacity .3s ease; }
+      #rideControl .sensor-icon { color:#60a5fa; font-weight:700; }
+      #rideControl .sensor-chip.compact { width:32px; height:32px; padding:0; justify-content:center; opacity:.55; }
+      #rideControl .sensor-chip.compact #sensorChipText { display:none; }
+      #rideControl[data-state="connected"] .sensor-chip, #rideControl[data-state="reconnecting"] .sensor-chip { display:inline-flex; }
+      #rideControl[data-state="reconnecting"] .sensor-chip { background:#b45309; }
+      #rideControl[data-state="reconnecting"] .sensor-icon { color:#fde68a; animation:blink 1s steps(2, start) infinite; }
+      #rideControl[data-state="connected"] .ride-connect, #rideControl[data-state="reconnecting"] .ride-connect { display:none; }
+      #rideControl[data-state="connected"] #tapZone, #rideControl[data-state="reconnecting"] #tapZone { display:none; }
+      @keyframes blink { to { visibility:hidden; } }
+      #sideBackdrop { display:none; }
+      #tapZone { white-space:nowrap; padding:.55rem 1.1rem .6rem; background:rgba(17,24,39,.85); color:white; border-radius: 18px; display:flex; flex-direction: column; align-items:center; justify-content:center; gap:.1rem; font-size:.9rem; letter-spacing:.02em; z-index: 12; box-shadow: 0 8px 20px rgba(0,0,0,.2); user-select:none; touch-action: manipulation; }
       #tapZone .tapzone-prefix { font-size:.72rem; opacity:.8; letter-spacing:.02em; text-transform: none; font-weight: 500; }
       #authToast { position: fixed; left: 50%; top: 72px; transform: translateX(-50%); background:#f8fafc; color:#0f172a; padding: .75rem 1rem; border-radius: .5rem; display:none; z-index: 60; box-shadow: 0 8px 18px rgba(37,99,235,.16); border: none; text-align: center; }
       #authToast .actions { display:inline-flex; gap:.5rem; margin-left: 0; margin-top: .3rem; justify-content: center; }
       #authToast button.ghost { background: #eff6ff; color: #1e3a8a; border-color: #93c5fd; }
       #authToast button.ghost:hover { background: #dbeafe; }
       body.auth-visible #authToast { display: block; }
-      body.tapzone-visible #tapZone { display: flex; }
-      #side { display:none; border-right: 1px solid #bfdbfe; padding: 52px .75rem .75rem; overflow: auto; min-height: 0; height: 100%; grid-area: side; background: #f8fafc; }
+      #side { display:none; box-sizing: border-box; border-right: 1px solid #bfdbfe; padding: .75rem; overflow: auto; min-height: 0; height: 100%; grid-area: side; background: #f8fafc; }
       #side h3 { color: #0f172a; }
       #side .section { border-bottom: 1px solid #e2e8f0; padding-bottom: .5rem; }
       #side .section:last-child { border-bottom: none; }
@@ -107,9 +120,9 @@
       body.history-open #miniMap { display: none; }
       body.history-open #turnToast { display: none; }
       body.history-open #historyMap { display: block; }
-      body.history-open #tapZone { display: none; }
+      body.history-open #rideControl { display: none; }
       body.history-open #hudBar { display: none; }
-      body.history-open #authToast { display: none; }
+      body.history-open #authToast, body.side-open #authToast { display: none; }
       /* Wide screen: show side when opened */
       body.side-open main { grid-template-columns: minmax(240px, 26vw) 1fr; grid-template-areas: "side pano"; }
       body.side-open #side { display: block; position: static; box-shadow: none; }
@@ -119,12 +132,10 @@
       .float-controls { position: absolute; top: 12px; z-index: 70; display:flex; align-items:center; gap:.5rem; }
       .float-left { left: 60px; }
       .float-right { right: 12px; }
-      .global-menu { position: fixed; top: 12px; left: 12px; z-index: 90; display:flex; align-items:center; gap:.5rem; }
+      .global-menu { position: absolute; top: 12px; left: 12px; z-index: 90; display:flex; align-items:center; gap:.5rem; }
       .float-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: rgba(15,23,42,.9); color:#f8fafc; font-weight:700; box-shadow: 0 8px 18px rgba(0,0,0,.28); display:flex; align-items:center; justify-content:center; }
       #togglePane { background: rgba(17,24,39,.85); }
       .float-btn:hover { filter: brightness(0.98); }
-      .float-connect { padding: .45rem .85rem; border-radius: 999px; border: none; background: #2563eb; color:#f8fafc; font-weight: 700; box-shadow: 0 8px 18px rgba(37,99,235,.35); display: inline-flex; align-items: center; }
-      .float-connect::before { content: "ᛒ"; display: inline-block; margin-right: .25rem; font-size: 1rem; }
 
       /* Responsive side panel: hide on small screens, show as overlay when toggled */
       @media (max-width: 900px) {
@@ -132,14 +143,11 @@
         #side { display: none; }
         body.side-open main { grid-template-columns: 1fr; grid-template-areas: "pano"; }
         body.side-open #side { display: block; position: fixed; top: 0; left: 0; bottom: 0; width: min(88vw, 320px); background: #f8fafc; box-shadow: 6px 0 18px rgba(37,99,235,.18); border-right: 1px solid #bfdbfe; z-index: 50; overflow: auto; padding-top: 52px; }
+        /* The panel covers the view: tapping outside it closes it. */
+        body.side-open #sideBackdrop { display: block; position: fixed; inset: 0; background: rgba(15,23,42,.25); z-index: 45; }
       }
       @media (max-width: 640px) {
-        #authToast { top: auto; bottom: calc(84px + env(safe-area-inset-bottom)); }
-        .global-menu { flex-direction: column; align-items: flex-start; }
-        .global-menu .float-connect { margin-left: 2px; }
-        .float-connect { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0; }
-        .float-connect::before { margin-right: 0; font-size: 1.1rem; }
-        body.side-open #connectBtn { display: none; }
+        #authToast { top: auto; bottom: calc(92px + env(safe-area-inset-bottom)); }
       }
     </style>
   </head>
@@ -150,8 +158,7 @@
         <div id="historyMap" aria-label="History map"></div>
         <div id="miniMap" aria-label="Mini map"></div>
         <div class="global-menu">
-          <button id="togglePane" class="float-btn" title="Toggle side pane" aria-label="Open menu">☰</button>
-          <button id="connectBtn" class="float-connect" aria-label="Connect Sensor">Connect Sensor</button>
+          <button id="togglePane" class="float-btn" title="Toggle side pane" aria-label="Open menu" aria-expanded="false">☰</button>
         </div>
         <div id="hudBar" aria-live="polite">
           <div class="hud-title">Street View Runner</div>
@@ -173,9 +180,15 @@
           <div id="turnChoices" class="turn-choices"></div>
           <div id="turnHint" class="turn-hint">Tap a direction or use the arrow keys</div>
         </div>
-        <div id="tapZone" role="button" aria-label="Toggle auto progress" tabindex="0">
-          <span id="autoProgressLabel">Auto forward: Off</span>
-          <span class="tapzone-prefix">No sensor</span>
+        <!-- How the ride moves: connect a sensor or use Auto forward. While a sensor is
+             connected this shrinks to a small icon so it stays out of the view. -->
+        <div id="rideControl" data-state="idle">
+          <button id="connectBtn" class="ride-connect">ᛒ Connect sensor</button>
+          <button id="sensorChip" class="sensor-chip" aria-live="polite" title="Sensor status"><span class="sensor-icon">ᛒ</span><span id="sensorChipText"></span></button>
+          <div id="tapZone" role="button" aria-label="Toggle auto progress" tabindex="0">
+            <span id="autoProgressLabel">Auto forward: Off</span>
+            <span class="tapzone-prefix">No sensor</span>
+          </div>
         </div>
         <div id="authToast" role="dialog" aria-live="polite">
           <span>Sign in to save your ride</span>
@@ -244,6 +257,7 @@
           </div>
         </div>
       </aside>
+      <div id="sideBackdrop" aria-hidden="true"></div>
     </main>
     <div id="notice" role="status" aria-live="polite"></div>
     <dialog id="appDialog">

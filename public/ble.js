@@ -21,6 +21,7 @@ export class BLEWalker {
     this._session = 0; // bumped on every connect/disconnect so stale reconnect loops stop
     this.onConnectionChange = null; // (isConnected:boolean) => void
     this.onReconnect = null; // (state: "reconnecting" | "reconnected" | "failed") => void
+    this.onStatus = null; // (text) => void; same text as the side pane status
   }
   get activeService() { return this._activeService; }
   async connect() {
@@ -80,6 +81,7 @@ export class BLEWalker {
   }
   _status(s) {
     document.getElementById("status").textContent = s;
+    try { this.onStatus?.(s); } catch {}
   }
   async _tryFTMS() {
     try {

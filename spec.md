@@ -75,10 +75,15 @@ Notes:
   - Speed (km/h) and today’s distance (km) in a compact HUD bar.
   - Title text ("Street View Runner") sits above the metrics and hides when speed becomes >0.
 - Controls
-  - Menu icon is fixed at the top-left and toggles the side pane.
-  - "Connect Sensor" button sits next to the menu icon; shown only when no BLE device is connected.
-  - Tap Zone is fixed near the bottom center; tapping or Space boosts virtual speed (hidden when BLE is connected).
+  - Menu icon sits at the top-left of the Street View (it moves with the view when the pane opens beside it) and toggles the side pane; it shows × while the pane is open.
+  - Ride control near the bottom center decides how the ride moves:
+    - Not connected: "Connect sensor" (hidden where Web Bluetooth is unavailable) next to the Auto forward Tap Zone (tap, Space or Enter toggles it).
+    - Connected: a chip shows the sensor name for 3 s, then shrinks to a small translucent ᛒ icon so it stays out of the view; tapping it shows the name again.
+    - Reconnecting: the chip stays expanded and highlighted with the attempt count; after the last attempt it returns to "Connect sensor".
 - Side Pane: following elements are show in a pane that is collapsible and hidden in default (slides in from the left).
+  - Wide screens: the pane sits beside the Street View. Narrow screens (≤900px): it overlays the view; tapping outside it or Esc closes it.
+  - History is part of the pane: closing the pane also closes the History view and returns to Street View.
+  - The logged-out auth toast is hidden while the pane is open (the pane has the same buttons).
   - User info: user name with an Edit button, register/login/add-passkey controls; Logout is shown on the User header.
   - History: day/week/month range selectors with previous/next controls; shows distance, riding time and average speed, plus a per-day list (distance bar and time) in week/month mode, and opens History view.
   - Display name and passkey labels are edited in place (Enter or leaving the field saves, Esc cancels). Removing a passkey and choosing a display name at registration use an in-page dialog, not browser prompts.
@@ -89,6 +94,7 @@ Notes:
 - Screen wake lock: the screen is kept on while a sensor or Auto forward is driving the ride (re-acquired when the page becomes visible again).
 - Sensor reconnect: after an unexpected BLE disconnect, the same device is retried after 1, 2, 4, 8 and 16 s before reporting "Disconnected".
 - Auth prompt: a small toast is shown near the top center when logged out, prompting Register or Login; hides on successful auth.
+- If the Maps API fails to load, a notice asks the user to reload instead of leaving a blank page.
 
 ## Data Model / Storage (KV + D1)
 ### User data
