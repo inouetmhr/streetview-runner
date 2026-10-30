@@ -202,7 +202,7 @@ async function verifyNewCredential(url, flow, body) {
     id: info.credential.id,
     publicKey: toBase64URL(info.credential.publicKey),
     counter: info.credential.counter || 0,
-    transports: info.transports || undefined,
+    transports: info.credential.transports || undefined,
     label: sanitizePasskeyLabel(body.passkeyLabel) || undefined,
   };
 }
