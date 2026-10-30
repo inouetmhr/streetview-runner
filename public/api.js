@@ -55,7 +55,7 @@ export async function registerWithPasskey(username) {
     if (!opt.ok) throw new Error('reg options failed');
     const { options, flowId } = opt.data;
     const { startRegistration } = await import(SIMPLEWEBAUTHN_BROWSER_URL);
-    const attResp = await startRegistration(options);
+    const attResp = await startRegistration({ optionsJSON: options });
     const passkeyLabel = suggestPasskeyLabel();
     const res = await postJson('/api/auth/register/verify', { flowId, response: attResp, passkeyLabel });
     if (!res.ok) throw new Error('reg verify failed');
@@ -72,7 +72,7 @@ export async function addPasskey() {
     if (!opt.ok) throw new Error('passkey options failed');
     const { options, flowId } = opt.data;
     const { startRegistration } = await import(SIMPLEWEBAUTHN_BROWSER_URL);
-    const attResp = await startRegistration(options);
+    const attResp = await startRegistration({ optionsJSON: options });
     const suggested = suggestPasskeyLabel();
     const input = prompt('Label this passkey:', suggested);
     if (input === null) return null;
@@ -92,7 +92,7 @@ export async function loginWithPasskey() {
     if (!opt.ok) throw new Error('auth options failed');
     const { options, flowId } = opt.data;
     const { startAuthentication } = await import(SIMPLEWEBAUTHN_BROWSER_URL);
-    const asn = await startAuthentication(options);
+    const asn = await startAuthentication({ optionsJSON: options });
     const res = await postJson('/api/auth/login/verify', { flowId, response: asn });
     if (!res.ok) throw new Error('auth verify failed');
     return res.data?.user || null;

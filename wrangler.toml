@@ -26,3 +26,15 @@ id = "CHANGEME"
 binding = "SVR_DB"
 database_name = "svr-db"
 database_id = "CHANGEME"
+
+# Per-IP limit for unauthenticated auth steps, per-user limit for signed-in writes.
+# namespace_id is any account-unique integer string.
+[[ratelimits]]
+name = "AUTH_LIMITER"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "WRITE_LIMITER"
+namespace_id = "1002"
+simple = { limit = 30, period = 60 }

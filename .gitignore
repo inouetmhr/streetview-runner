@@ -7,3 +7,4 @@ dist
 wrangler.production.toml
 
 .home/
+.DS_Store

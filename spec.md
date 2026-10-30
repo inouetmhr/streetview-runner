@@ -145,9 +145,18 @@ Notes:
 - WebAuthn:
   - Validate `Origin` equals `expectedOrigin`; set `rpID` to request hostname.
   - Use `HttpOnly; Secure; SameSite=Lax` cookies for sessions; `SameSite=Strict` for one‑off registration flow cookies.
-  - Delete challenges after verification; set short TTL (≈10 minutes).
+  - Challenges are single-use: deleted before verification; short TTL (≈10 minutes).
   - Require `userVerification: 'preferred'`; attestation `none`.
-  - Session lifetime ≈1 year (to approximate “never expire”); refresh on login.
+  - The browser library is self-hosted (`public/vendor/`, built by `npm run vendor`), not loaded from a CDN.
+- Sessions:
+  - KV entries expire after ≈1 year (`expirationTtl`); the expiry and cookie `Max-Age` slide forward at most once per 30 days of use, approximating “never expire”.
+  - A session is valid only while its passkey is still registered: removing a passkey (or the user) signs out the devices that used it (401 + cleared cookie).
+- Request checks:
+  - Every POST must carry `Origin` equal to the app origin (400 otherwise) and, when it has a content type, `application/json` (415 otherwise). This covers same-site subdomains that `SameSite=Lax` does not.
+  - Rate limits (Workers Rate Limiting bindings): `AUTH_LIMITER` 10/min per client IP for unauthenticated register/login steps; `WRITE_LIMITER` 30/min per user for signed-in writes. Over the limit → 429 with `Retry-After`.
+- Response headers: HSTS, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (Bluetooth for self only); API responses are `Cache-Control: no-store`.
+- HTML gets a strict CSP with a per-response nonce injected into every `<script>` by HTMLRewriter: `script-src 'nonce-…' 'strict-dynamic' 'wasm-unsafe-eval'` (Maps needs WebAssembly), `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`.
+- The Google Maps key is public by design; restrict it in Google Cloud to the app's HTTP referrers and the Maps JavaScript API.
 
 ## Performance
 - Browser budget: single AudioContext, minimal allocations per notification.

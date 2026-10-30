@@ -6,7 +6,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const MAX_RANGE_DAYS = 31;
 const MAX_TS_SKEW_MS = DAY_MS;
 
+export function isJsonRequest(request) {
+  const ct = (request.headers.get("content-type") || "").toLowerCase();
+  return ct.split(";")[0].trim() === "application/json";
+}
+
+// Parses a JSON body; returns null for invalid JSON or a non-JSON content type
+// (so form-encoded or text/plain cross-site posts are never treated as JSON).
 export async function safeJson(request) {
+  if (!isJsonRequest(request)) return null;
   try {
     return await request.json();
   } catch (_) {
@@ -114,9 +122,37 @@ export function getCookie(request, name) {
   return null;
 }
 
+// Browsers send Origin on every POST (same-origin fetch included), so a missing
+// Origin on a POST means a non-browser or stripped request: reject it too.
 export function originOk(request, url) {
   const origin = request.headers.get("origin");
-  // Some tools may not send Origin; only enforce when present
-  if (origin && origin !== url.origin) return false;
-  return true;
+  if (request.method === "POST") return origin === url.origin;
+  return !origin || origin === url.origin;
+}
+
+const SECURITY_HEADERS = {
+  "Strict-Transport-Security": "max-age=31536000",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "bluetooth=(self), camera=(), microphone=(), geolocation=()",
+};
+
+// Strict CSP (nonce + strict-dynamic). 'unsafe-inline' and https: are ignored by
+// browsers that support nonces and only act as fallbacks for very old ones.
+// 'wasm-unsafe-eval' lets Google Maps compile WebAssembly without allowing JS eval().
+export function contentSecurityPolicy(nonce) {
+  return [
+    `script-src 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval' https: 'unsafe-inline'`,
+    "object-src 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+// Returns a copy of res with security headers (and no-store for API responses).
+export function withSecurityHeaders(res, { api = false } = {}) {
+  const out = new Response(res.body, res);
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v);
+  if (api) out.headers.set("Cache-Control", "no-store");
+  return out;
 }

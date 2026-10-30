@@ -7,6 +7,7 @@ import {
 import {
   json,
   safeJson,
+  isJsonRequest,
   toBase64URL,
   fromBase64URL,
   randomToken,
@@ -17,6 +18,7 @@ import {
 const RP_NAME = "Street View Runner";
 const SESSION_COOKIE_NAME = "svr_session";
 const SESSION_MAX_AGE_S = 60 * 60 * 24 * 365; // ~1y
+const SESSION_RENEW_AFTER_MS = 30 * 24 * 60 * 60 * 1000; // slide expiry at most once per 30 days
 const CHALLENGE_TTL_S = 600;
 
 // ---------- KV keys & storage ----------
@@ -56,30 +58,81 @@ async function takeFlow(env, key) {
 }
 
 // ---------- Sessions ----------
-export async function getSession(request, env) {
-  const token = getCookie(request, SESSION_COOKIE_NAME);
-  if (!token) return null;
-  return await getKV(env, sessionKey(token));
+function sessionCookie(token) {
+  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_S}`;
+}
+const CLEAR_SESSION_COOKIE = `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+
+async function putSession(env, token, session) {
+  await putKV(env, sessionKey(token), session, { expirationTtl: SESSION_MAX_AGE_S });
 }
 
 async function createSession(env, userId, credentialId) {
   const token = randomToken();
-  await putKV(env, sessionKey(token), { userId, credentialId: credentialId || null, createdAt: Date.now() });
-  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_S}`;
+  const now = Date.now();
+  await putSession(env, token, { userId, credentialId: credentialId || null, createdAt: now, renewedAt: now });
+  return sessionCookie(token);
+}
+
+function hasCredential(user, credentialId) {
+  return (user.credentials || []).some((cred) => normalizeCredentialIdString(cred.id) === credentialId);
 }
 
 // ---------- Handler wrappers ----------
-export function withOrigin(fn) {
-  return (ctx) => (originOk(ctx.request, ctx.url) ? fn(ctx) : json({ error: "bad origin" }, 400));
-}
+// Handlers receive ctx = { request, env, url, responseHeaders }; wrappers may add
+// to ctx.responseHeaders (e.g. a renewed session cookie) and the router copies them out.
 
-export function requireSession(fn) {
-  return async (ctx) => {
-    const session = await getSession(ctx.request, ctx.env);
-    if (!session?.userId) return json({ error: "unauthorized" }, 401);
-    return fn({ ...ctx, session, userId: session.userId });
+export function withOrigin(fn) {
+  return (ctx) => {
+    if (!originOk(ctx.request, ctx.url)) return json({ error: "bad origin" }, 400);
+    if (ctx.request.headers.has("content-type") && !isJsonRequest(ctx.request)) {
+      return json({ error: "content-type must be application/json" }, 415);
+    }
+    return fn(ctx);
   };
 }
+
+// Resolves the session and its user. A session is only valid while its passkey
+// is still registered, so removing a passkey signs out the devices that used it.
+export function requireSession(fn) {
+  return async (ctx) => {
+    const { request, env } = ctx;
+    const token = getCookie(request, SESSION_COOKIE_NAME);
+    const session = token ? await getKV(env, sessionKey(token)) : null;
+    if (!session?.userId) return json({ error: "unauthorized" }, 401);
+    const user = await getUser(env, session.userId);
+    const credentialOk = user && (!session.credentialId || hasCredential(user, normalizeCredentialIdString(session.credentialId)));
+    if (!credentialOk) {
+      await delKV(env, sessionKey(token));
+      return json({ error: "unauthorized" }, 401, { "Set-Cookie": CLEAR_SESSION_COOKIE });
+    }
+    const lastRenewed = session.renewedAt || session.createdAt || 0;
+    if (Date.now() - lastRenewed > SESSION_RENEW_AFTER_MS) {
+      session.renewedAt = Date.now();
+      await putSession(env, token, session);
+      ctx.responseHeaders.append("Set-Cookie", sessionCookie(token));
+    }
+    return fn({ ...ctx, session, user, userId: session.userId });
+  };
+}
+
+// Fixed-window limit via a Workers Rate Limiting binding; skipped when the
+// binding is absent (tests, or an environment without [[ratelimits]]).
+export function withRateLimit(bindingName, keyFn) {
+  return (fn) => async (ctx) => {
+    const limiter = ctx.env[bindingName];
+    if (limiter) {
+      const { success } = await limiter.limit({ key: keyFn(ctx) });
+      if (!success) return json({ error: "too many requests" }, 429, { "Retry-After": "60" });
+    }
+    return fn(ctx);
+  };
+}
+
+export const byClientIp = (ctx) => ctx.request.headers.get("cf-connecting-ip") || "unknown";
+export const byUser = (ctx) => ctx.userId;
+const limitAuth = withRateLimit("AUTH_LIMITER", byClientIp);
+export const limitWrites = withRateLimit("WRITE_LIMITER", byUser);
 
 // ---------- Helpers ----------
 function sanitizeUsername(s) {
@@ -161,17 +214,14 @@ async function readFlowBody(request) {
 }
 
 // ---------- Handlers ----------
-async function sessionInfo({ env, userId }) {
-  const user = await getUser(env, userId);
-  if (!user) return json({ error: "unauthorized" }, 401);
+// Handlers behind requireSession get the already-loaded `user` from ctx.
+async function sessionInfo({ user }) {
   return userResponse(user);
 }
 
-async function updateUsername({ request, env, userId }) {
+async function updateUsername({ request, env, userId, user }) {
   const body = await safeJson(request);
   const username = sanitizeUsername(body?.username || "");
-  const user = await getUser(env, userId);
-  if (!user) return json({ error: "unknown user" }, 404);
   user.username = username;
   await putKV(env, userKey(userId), user);
   return userResponse(user);
@@ -212,9 +262,7 @@ async function registerVerify({ request, env, url }) {
   }
 }
 
-async function passkeyAddOptions({ env, url, userId }) {
-  const user = await getUser(env, userId);
-  if (!user) return json({ error: "unknown user" }, 404);
+async function passkeyAddOptions({ env, url, userId, user }) {
   const excludeCredentials = (user.credentials || [])
     .map((cred) => {
       const id = normalizeCredentialIdString(cred.id);
@@ -252,18 +300,14 @@ async function passkeyAddVerify({ request, env, url, userId }) {
   }
 }
 
-async function passkeyList({ env, userId, session }) {
-  const user = await getUser(env, userId);
-  if (!user) return json({ error: "unknown user" }, 404);
+async function passkeyList({ user, session }) {
   return passkeyListResponse(user, session);
 }
 
-async function passkeyDelete({ request, env, userId, session }) {
+async function passkeyDelete({ request, env, user, session }) {
   const body = await safeJson(request);
   const credentialId = String(body?.credentialId || "");
   if (!credentialId) return json({ error: "missing credential id" }, 400);
-  const user = await getUser(env, userId);
-  if (!user) return json({ error: "unknown user" }, 404);
   const creds = Array.isArray(user.credentials) ? user.credentials : [];
   if (creds.length <= 1) return json({ error: "last passkey cannot be removed" }, 400);
   const next = creds.filter((cred) => normalizeCredentialIdString(cred.id) !== credentialId);
@@ -274,14 +318,12 @@ async function passkeyDelete({ request, env, userId, session }) {
   return passkeyListResponse(user, session);
 }
 
-async function passkeyLabel({ request, env, userId, session }) {
+async function passkeyLabel({ request, env, user, session }) {
   const body = await safeJson(request);
   const credentialId = String(body?.credentialId || "");
   const label = sanitizePasskeyLabel(body?.label);
   if (!credentialId) return json({ error: "missing credential id" }, 400);
   if (!label) return json({ error: "invalid label" }, 400);
-  const user = await getUser(env, userId);
-  if (!user) return json({ error: "unknown user" }, 404);
   const target = (user.credentials || []).find((cred) => normalizeCredentialIdString(cred.id) === credentialId);
   if (!target) return json({ error: "credential not found" }, 404);
   target.label = label;
@@ -336,20 +378,25 @@ async function loginVerify({ request, env, url }) {
 async function logout({ request, env }) {
   const token = getCookie(request, SESSION_COOKIE_NAME);
   if (token) await delKV(env, sessionKey(token));
-  return json({ ok: true }, 200, { "Set-Cookie": `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0` });
+  return json({ ok: true }, 200, { "Set-Cookie": CLEAR_SESSION_COOKIE });
 }
+
+// Signed-in state changes: origin check, session, then a per-user write limit.
+export const authedWrite = (fn) => withOrigin(requireSession(limitWrites(fn)));
+// Unauthenticated auth steps write challenges/users to KV: limit per client IP.
+const publicAuth = (fn) => withOrigin(limitAuth(fn));
 
 export const AUTH_ROUTES = {
   "/api/auth/session": { GET: requireSession(sessionInfo) },
-  "/api/auth/username": { POST: withOrigin(requireSession(updateUsername)) },
-  "/api/auth/register/options": { POST: withOrigin(registerOptions) },
-  "/api/auth/register/verify": { POST: withOrigin(registerVerify) },
+  "/api/auth/username": { POST: authedWrite(updateUsername) },
+  "/api/auth/register/options": { POST: publicAuth(registerOptions) },
+  "/api/auth/register/verify": { POST: publicAuth(registerVerify) },
   "/api/auth/passkeys": { GET: requireSession(passkeyList) },
-  "/api/auth/passkeys/options": { POST: withOrigin(requireSession(passkeyAddOptions)) },
-  "/api/auth/passkeys/verify": { POST: withOrigin(requireSession(passkeyAddVerify)) },
-  "/api/auth/passkeys/delete": { POST: withOrigin(requireSession(passkeyDelete)) },
-  "/api/auth/passkeys/label": { POST: withOrigin(requireSession(passkeyLabel)) },
-  "/api/auth/login/options": { POST: withOrigin(loginOptions) },
-  "/api/auth/login/verify": { POST: withOrigin(loginVerify) },
+  "/api/auth/passkeys/options": { POST: authedWrite(passkeyAddOptions) },
+  "/api/auth/passkeys/verify": { POST: authedWrite(passkeyAddVerify) },
+  "/api/auth/passkeys/delete": { POST: authedWrite(passkeyDelete) },
+  "/api/auth/passkeys/label": { POST: authedWrite(passkeyLabel) },
+  "/api/auth/login/options": { POST: publicAuth(loginOptions) },
+  "/api/auth/login/verify": { POST: publicAuth(loginVerify) },
   "/api/auth/logout": { POST: withOrigin(logout) },
 };

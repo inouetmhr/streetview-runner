@@ -1,9 +1,9 @@
 import { AUTH_ROUTES } from "./auth.js";
 import { HISTORY_ROUTES } from "./history.js";
-import { json } from "./lib.js";
+import { json, randomToken, contentSecurityPolicy, withSecurityHeaders } from "./lib.js";
 
-// pathname -> { METHOD: handler(ctx) }. Handlers receive { request, env, url } and,
-// behind requireSession, { session, userId }.
+// pathname -> { METHOD: handler(ctx) }. Handlers receive { request, env, url, responseHeaders }
+// and, behind requireSession, { session, user, userId }.
 const ROUTES = { ...AUTH_ROUTES, ...HISTORY_ROUTES };
 
 export default {
@@ -13,30 +13,36 @@ export default {
 
     // Route API requests first
     if (url.pathname.startsWith("/api/")) {
+      let res;
       try {
-        return await handleApi(request, env, url);
+        res = await handleApi(request, env, url);
       } catch (e) {
         console.error("API error", e);
-        return json({ error: "internal error" }, 500);
+        res = json({ error: "internal error" }, 500);
       }
+      return withSecurityHeaders(res, { api: true });
     }
+    return withSecurityHeaders(await serveStatic(request, env));
+  },
+};
 
-    // Try to serve static assets (public/*) first
-    if (env.ASSETS) {
-      // Attempt exact match (e.g., /, /styles.css, /app.js)
-      let res = await env.ASSETS.fetch(request);
-      if (res.status !== 404) {
-        // Inject Google Maps API key into any HTML we return
-        if (shouldInjectHtml(res)) {
-          return await injectWithRewriter(res, env);
-        }
-        return res;
+async function serveStatic(request, env) {
+  // Try to serve static assets (public/*) first
+  if (env.ASSETS) {
+    // Attempt exact match (e.g., /, /styles.css, /app.js)
+    let res = await env.ASSETS.fetch(request);
+    if (res.status !== 404) {
+      // Inject Google Maps API key into any HTML we return
+      if (shouldInjectHtml(res)) {
+        return injectWithRewriter(res, env);
       }
+      return res;
     }
+  }
 
-    // Last resort: inline HTML fallback (if assets missing)
-    return new Response(
-      `<!doctype html>
+  // Last resort: inline HTML fallback (if assets missing)
+  return new Response(
+    `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -53,19 +59,25 @@ export default {
     <p>Available APIs (session required): <code>GET/POST /api/status</code>, <code>GET/POST /api/history?day=YYYY-MM-DD</code>.</p>
   </body>
 </html>`,
-      { headers: { "content-type": "text/html; charset=utf-8" } }
-    );
-  },
-};
+    { headers: { "content-type": "text/html; charset=utf-8" } }
+  );
+}
 
 function shouldInjectHtml(res) {
   const ct = (res.headers.get("content-type") || "").toLowerCase();
   return ct.includes("text/html");
 }
 
-async function injectWithRewriter(res, env) {
+// Injects the Maps API key and a per-response CSP nonce into every <script>.
+function injectWithRewriter(res, env) {
   const key = env.GOOGLE_MAPS_API_KEY || "";
+  const nonce = randomToken(16);
   const rewriter = new HTMLRewriter()
+    .on('script', {
+      element(el) {
+        el.setAttribute('nonce', nonce);
+      }
+    })
     .on('script[src*="maps.googleapis.com/maps/api/js"]', {
       element(el) {
         const src = el.getAttribute('src') || '';
@@ -73,10 +85,10 @@ async function injectWithRewriter(res, env) {
           el.setAttribute('src', src.replaceAll('__GOOGLE_MAPS_API_KEY__', key));
         } else if (key) {
           try {
-            const u = new URL(src, 'https://example.com');
+            const u = new URL(src, 'https://maps.googleapis.com');
             if (!u.searchParams.get('key')) {
               u.searchParams.set('key', key);
-              el.setAttribute('src', u.pathname + u.search);
+              el.setAttribute('src', u.toString());
             }
           } catch (_) {
             // ignore invalid URLs
@@ -100,6 +112,7 @@ async function injectWithRewriter(res, env) {
   h.delete('content-encoding');
   h.delete('etag');
   h.set('content-type', 'text/html; charset=utf-8');
+  h.set('Content-Security-Policy', contentSecurityPolicy(nonce));
   return new Response(out.body, { status: out.status, headers: h });
 }
 
@@ -110,5 +123,8 @@ async function handleApi(request, env, url) {
   if (!handler) {
     return json({ error: "method not allowed" }, 405, { Allow: Object.keys(route).join(", ") });
   }
-  return await handler({ request, env, url });
+  const responseHeaders = new Headers();
+  const res = await handler({ request, env, url, responseHeaders });
+  for (const [k, v] of responseHeaders) res.headers.append(k, v);
+  return res;
 }

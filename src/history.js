@@ -1,4 +1,4 @@
-import { requireSession } from "./auth.js";
+import { requireSession, authedWrite } from "./auth.js";
 import {
   json,
   safeJson,
@@ -109,6 +109,6 @@ async function postHistory({ request, env, userId }) {
 }
 
 export const HISTORY_ROUTES = {
-  "/api/status": { GET: requireSession(getStatus), POST: requireSession(postStatus) },
-  "/api/history": { GET: requireSession(getHistory), POST: requireSession(postHistory) },
+  "/api/status": { GET: requireSession(getStatus), POST: authedWrite(postStatus) },
+  "/api/history": { GET: requireSession(getHistory), POST: authedWrite(postHistory) },
 };
