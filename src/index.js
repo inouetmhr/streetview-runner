@@ -444,7 +444,8 @@ async function handleApi(request, env, url) {
       if (!userId) return json({ error: "unauthorized" }, 401);
       let status = null;
       let dailyDistanceMeters = 0;
-      let day = today();
+      const day = (searchParams.get("day") || today()).trim();
+      if (!isPlausibleRideDay(day)) return json({ error: "invalid day" }, 400);
       if (env.SVR_DB) {
         status = await getLatestHistoryFromD1(env, userId);
         const items = await getHistoryFromD1(env, userId, day);
@@ -498,7 +499,8 @@ async function handleApi(request, env, url) {
       if (!point || !isFinite(point.lat) || !isFinite(point.lng)) {
         return json({ error: "numeric lat,lng required" }, 400);
       }
-      const day = point.day || today();
+      const day = point.day == null ? today() : String(point.day).trim();
+      if (!isPlausibleRideDay(day)) return json({ error: "invalid day" }, 400);
       const item = {
         lat: Number(point.lat),
         lng: Number(point.lng),
@@ -682,6 +684,15 @@ function isValidDayString(s) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const d = new Date(`${s}T00:00:00Z`);
   return Number.isFinite(d.valueOf()) && d.toISOString().slice(0, 10) === s;
+}
+
+// Clients send their local "ride day"; accept it only within ±1 day of the server's UTC day.
+function isPlausibleRideDay(day, now = Date.now()) {
+  if (!isValidDayString(day)) return false;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const serverDay = Date.parse(`${new Date(now).toISOString().slice(0, 10)}T00:00:00Z`);
+  const diff = Date.parse(`${day}T00:00:00Z`) - serverDay;
+  return Math.abs(diff) <= DAY_MS;
 }
 
 function normalizeHistoryRange(fromParam, toParam) {

@@ -151,7 +151,8 @@ class BLEWalker {
 async function fetchStatus() {
   try {
     console.log("api/status: fetch");
-    const res = await fetch(`/api/status`);
+    const params = new URLSearchParams({ day: rideDay() });
+    const res = await fetch(`/api/status?${params.toString()}`);
     if (!res.ok) throw new Error(`Status ${res.status}`);
     const data = await res.json();
     console.log("api/status: response", data);
@@ -346,6 +347,16 @@ function generateFriendlyName() {
   return `${a} ${b}`;
 }
 
+// A "ride day" is the user's local calendar day, rolling over at DAY_ROLLOVER_HOUR
+// so late-night rides still count toward the previous day.
+const DAY_ROLLOVER_HOUR = 3;
+function rideDay(date = new Date()) {
+  const d = new Date(date.getTime() - DAY_ROLLOVER_HOUR * 60 * 60 * 1000);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 function toDateStringUTC(d) {
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -371,7 +382,7 @@ function getLocaleFirstDayIndex() {
 }
 
 function getWeekRangeUTC(dayStr, firstDayIndex) {
-  const base = parseDateStringUTC(dayStr) || new Date();
+  const base = parseDateStringUTC(dayStr) || parseDateStringUTC(rideDay());
   const dayIndex = base.getUTCDay();
   const diff = (dayIndex - firstDayIndex + 7) % 7;
   const start = new Date(base);
@@ -383,8 +394,7 @@ function getWeekRangeUTC(dayStr, firstDayIndex) {
 
 function getMonthRangeUTC(monthStr) {
   if (!/^\d{4}-\d{2}$/.test(monthStr)) {
-    const now = new Date();
-    monthStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    monthStr = rideDay().slice(0, 7);
   }
   const [y, m] = monthStr.split("-").map(Number);
   const start = new Date(Date.UTC(y, m - 1, 1));
@@ -465,7 +475,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const authToast = { el: qs('authToast'), btnLogin: qs('toastLogin'), btnRegister: qs('toastRegister'), btnClose: qs('toastClose') };
   let sessionUser = await getSession();
   let isHistoryOpen = false;
-  const dayString = () => new Date().toISOString().slice(0,10);
+  const dayString = () => rideDay();
   let passkeyItems = [];
   let passkeyCurrentId = null;
   const renderPasskeys = () => {
@@ -744,7 +754,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     lastPositionChangedAt: 0,    // timestamp (ms) of last position_changed
     speedBuffer: [],             // ring buffer of { moved, ts } for windowed avg
     decayTimerId: 0,             // setTimeout id for speed decay
-    dayStr: new Date().toISOString().slice(0,10),
+    dayStr: rideDay(),
     travelHeading: Number.isFinite(last?.heading) ? last.heading : (pano.getPov()?.heading || defaultLocation.heading),
     ignorePovUntil: 0,
     pendingTravelHeading: null,
@@ -888,13 +898,13 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   function shiftHistoryPeriod(direction) {
     if (historyMode === "day") {
-      const base = parseDateStringUTC(historyUI.inputDay?.value || dayString()) || new Date();
+      const base = parseDateStringUTC(historyUI.inputDay?.value || dayString()) || parseDateStringUTC(dayString());
       base.setUTCDate(base.getUTCDate() + direction);
       if (historyUI.inputDay) historyUI.inputDay.value = toDateStringUTC(base);
       return;
     }
     if (historyMode === "week") {
-      const base = parseDateStringUTC(historyUI.inputWeek?.value || dayString()) || new Date();
+      const base = parseDateStringUTC(historyUI.inputWeek?.value || dayString()) || parseDateStringUTC(dayString());
       base.setUTCDate(base.getUTCDate() + (direction * 7));
       if (historyUI.inputWeek) historyUI.inputWeek.value = toDateStringUTC(base);
       return;
@@ -1363,7 +1373,7 @@ window.addEventListener("DOMContentLoaded", async () => {
           || distMeters(session.lastHistorySaved, currentPos) >= HISTORY_SAVE_DISTANCE_M;
         if (historyChanged) {
           session.lastHistorySaved = { ...currentPos };
-          appendHistory({ ...currentPos, heading, ts: Date.now() });
+          appendHistory({ ...currentPos, heading, ts: Date.now(), day: session.dayStr });
         }
       }
     }
