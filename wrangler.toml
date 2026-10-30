@@ -1,6 +1,6 @@
 name = "svr-cf"
 main = "src/index.js"
-compatibility_date = "2024-09-19"
+compatibility_date = "2026-10-23"
 # Example (production-only) routes:
 # routes = [{ pattern = "your-domain.example/*", zone_name = "example" }]
 
@@ -38,3 +38,7 @@ simple = { limit = 10, period = 60 }
 name = "WRITE_LIMITER"
 namespace_id = "1002"
 simple = { limit = 30, period = 60 }
+
+# Workers Logs: keep console output and errors from every request in the dashboard.
+[observability]
+enabled = true

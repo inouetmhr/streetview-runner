@@ -23,7 +23,8 @@
 - Routes are declared in route tables (`AUTH_ROUTES`, `HISTORY_ROUTES`) merged in `src/index.js`; wrap handlers with `requireSession` / `withOrigin`. Keep handlers small and pure where possible.
 
 ## Testing Guidelines
-- `npm test` runs vitest (with `TZ=Asia/Tokyo`). Tests live in `src/__tests__/*.test.js`; do not put test files under `public/` (it is served as-is). Keep API handlers factored for unit testing.
+- `npm test` runs vitest (with `TZ=Asia/Tokyo`). GitHub Actions (`.github/workflows/test.yml`) runs it plus `wrangler deploy --dry-run` on every push to `main` and on pull requests. Tests live in `src/__tests__/*.test.js`; do not put test files under `public/` (it is served as-is). Keep API handlers factored for unit testing.
+- Frontend ride logs (position, links, sensor deltas) print only with `?debug` in the URL or `localStorage.debug = "1"`; use `debugLog()` from `dom.js` for new ones. Production Worker logs are in Workers Logs (`[observability]`).
 - Manual checks: run `npm run dev` and exercise endpoints: `GET /api/status?day=YYYY-MM-DD`, `GET/POST /api/history`.
 
 ## Commit & Pull Requests

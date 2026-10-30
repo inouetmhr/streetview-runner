@@ -9,7 +9,6 @@ const ROUTES = { ...AUTH_ROUTES, ...HISTORY_ROUTES };
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    console.log(`Request: ${request.method} ${url.pathname}${url.search}`);
 
     // Route API requests first
     if (url.pathname.startsWith("/api/")) {

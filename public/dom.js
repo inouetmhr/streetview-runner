@@ -4,6 +4,16 @@ export const MAP_ID = "fcf78f824472c3b8";
 
 export function qs(id) { return document.getElementById(id); }
 
+// Per-step ride logs are noisy, so they print only with ?debug in the URL or
+// localStorage.debug = "1" (handy when tuning movement on a real sensor).
+const DEBUG = (() => {
+  try { return new URLSearchParams(location.search).has("debug") || localStorage.getItem("debug") === "1"; } catch { return false; }
+})();
+
+export function debugLog(...args) {
+  if (DEBUG) console.log(...args);
+}
+
 const NOTICE_MS = 4000;
 let noticeTimer = 0;
 

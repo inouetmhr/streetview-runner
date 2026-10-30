@@ -7,7 +7,7 @@ import { createSpeedMeter } from "./speed-meter.js";
 import { createVirtualRider } from "./virtual-rider.js";
 import { createTrail } from "./trail.js";
 import { createWakeLock } from "./wake-lock.js";
-import { qs, MAP_ID, notify } from "./dom.js";
+import { qs, MAP_ID, notify, debugLog } from "./dom.js";
 import {
   loadLastPosition,
   saveLastPosition,
@@ -384,7 +384,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (state === "connected") {
       sensorChipTimer = setTimeout(() => ui.sensorChip.classList.add("gone"), SENSOR_CHIP_HIDE_MS);
     }
-    console.log(`ride state: ${state}`);
+    debugLog(`ride state: ${state}`);
   }
   const connectedText = () => `${walker.device?.name || "Sensor"} · Connected`;
 
@@ -578,7 +578,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const pov = pano.getPov();
     const turnAngle = Math.abs(angleDelta(baseHeading, link.heading || 0));
     if (turnAngle > TURN_BLOCK_ANGLE) {
-      console.log("turn blocked. angle: " + turnAngle);
+      debugLog("turn blocked. angle: " + turnAngle);
       setTurnBlocked(true, true);
       return;
     }
@@ -594,13 +594,13 @@ window.addEventListener("DOMContentLoaded", async () => {
      so the result can only be inferred.
      Therefore, advance() is repeatedly called for the remaining distance to travel. */
   function onSensorDistanceDelta(delta) {
-    console.log(`onSensorDistanceDelta: ${delta} meter`);
+    debugLog(`onSensorDistanceDelta: ${delta} meter`);
     if (isNaN(delta) || delta <= 0.0) return; // not supposed
     session.distanceToGo = Math.min((session.distanceToGo || 0) + delta, MAX_BACKLOG_M);
     if (session.distanceToGo > 0) {
       advance();
     } else {
-      console.log(`move skipped. backlog: ${session.distanceToGo.toFixed(1)}`);
+      debugLog(`move skipped. backlog: ${session.distanceToGo.toFixed(1)}`);
     }
   }
 
@@ -608,7 +608,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   pano.addListener("links_changed", () => {
     session.linksReady = true;
     const restToGo = session.distanceToGo;
-    console.log(`links_changed. rest to go: ${restToGo.toFixed(1)}`);
+    debugLog(`links_changed. rest to go: ${restToGo.toFixed(1)}`);
     const blocked = isTurnBlocked(pano, session.travelHeading);
     setTurnBlocked(blocked, blocked);
     if (restToGo > 0 && !blocked) advance();
@@ -645,7 +645,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       moved = distMeters(session.prevPosition, currentPos);
       if (Number.isFinite(moved) && moved > 0) session.distanceToGo -= moved;
     }
-    console.log("position_changed. moved:", moved.toFixed(1));
+    debugLog("position_changed. moved:", moved.toFixed(1));
     if (moved < 0) return;
     if (moved > MANUAL_JUMP_M) { // reset when large changes caused by manual/pegman move on mini map.
       session.distanceToGo = 0;
