@@ -37,9 +37,25 @@ const VISIBILITY_SYNC_MS = 60 * 1000;
 const UNSUPPORTED_BLE_MESSAGE = "Web Bluetooth isn’t supported on Firefox or iOS.";
 const SENSOR_CHIP_HIDE_MS = 3000; // show the sensor name briefly after connecting, then hide it
 
+const MAPS_LOADER_TIMEOUT_MS = 15000;
+
+// With loading=async the loader defines google.maps.importLibrary only once its own
+// main script has loaded, which can be after this module starts, so wait for it.
+async function waitForMapsLoader() {
+  const deadline = Date.now() + MAPS_LOADER_TIMEOUT_MS;
+  while (!window.google?.maps?.importLibrary) {
+    if (Date.now() > deadline) return false;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return true;
+}
+
 // The Maps loader runs with loading=async, so classes are available only after importLibrary.
 async function loadMapsLibraries() {
-  if (!window.google?.maps?.importLibrary) return false;
+  if (!(await waitForMapsLoader())) {
+    console.warn("Google Maps loader did not start");
+    return false;
+  }
   try {
     await Promise.all(["core", "maps", "streetView"].map((name) => google.maps.importLibrary(name)));
     return true;
@@ -330,7 +346,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // ---------- Sensor (BLE) and virtual rider ----------
   function renderMetrics(metrics, ble) {
-    deviceStatus.speed.textContent = session.turnBlocked ? "Turn!" : metrics.speedKmh.toFixed(1);
+    deviceStatus.speed.textContent = metrics.speedKmh.toFixed(1);
     deviceStatus.cadence.textContent = Math.round(metrics.cadenceRpm);
     deviceStatus.distance.textContent = metrics.distanceM.toFixed(0);
     if (ble) {
@@ -347,7 +363,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   function setRideState(state, text = "") {
     document.body.dataset.ride = state;
     ui.connectBtn.disabled = state === "connecting";
-    ui.connectTitle.textContent = state === "connecting" ? "Connecting…" : "Connect sensor";
+    ui.connectTitle.textContent = state === "connecting" ? "Connecting…" : "Connect";
     ui.sensorChipText.textContent = text;
     ui.sensorChip.classList.remove("gone");
     clearTimeout(sensorChipTimer);
@@ -375,7 +391,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     } else if (state === "reconnected") {
       notify("Sensor reconnected.");
     } else {
-      notify("Sensor connection lost. Tap Connect sensor to try again.", { kind: "error" });
+      notify("Sensor connection lost. Tap Connect to try again.", { kind: "error" });
     }
   };
   if (!navigator.bluetooth) ui.connectBtn.hidden = true; // Firefox, iOS: Auto forward only
@@ -688,6 +704,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     document.body.classList.toggle("side-open", open);
     ui.togglePane.textContent = open ? "×" : "☰";
     ui.togglePane.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    ui.togglePane.title = open ? "Close menu" : "Menu";
     ui.togglePane.setAttribute("aria-expanded", String(open));
     requestAnimationFrame(() => refreshPanoLayout());
   }

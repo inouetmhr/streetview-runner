@@ -99,7 +99,7 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
       return;
     }
     if (!passkeyItems.length) {
-      uiUser.passkeyList.textContent = "none";
+      uiUser.passkeyList.textContent = "—";
       return;
     }
     uiUser.passkeyList.replaceChildren(...passkeyItems.map((item, index) => {
@@ -113,7 +113,7 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
       const btnRename = document.createElement("button");
       btnRename.className = "ghost small btn-edit";
       btnRename.textContent = "Edit";
-      btnRename.title = "Edit passkey label";
+      btnRename.title = "Rename passkey";
       btnRename.setAttribute("aria-label", "Rename passkey");
       btnRename.addEventListener("click", () => renamePasskeyInPlace(item, currentLabel, label));
       const actions = document.createElement("div");

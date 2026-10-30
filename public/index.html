@@ -164,7 +164,7 @@
         <div id="historyMap" aria-label="History map"></div>
         <div id="miniMap" aria-label="Mini map"></div>
         <div class="global-menu">
-          <button id="togglePane" class="float-btn" title="Toggle side pane" aria-label="Open menu" aria-expanded="false">☰</button>
+          <button id="togglePane" class="float-btn" title="Menu" aria-label="Open menu" aria-expanded="false">☰</button>
         </div>
         <div id="hudBar" aria-live="polite">
           <div class="hud-title">Street View Runner</div>
@@ -176,7 +176,7 @@
             </div>
             <div class="meter">
               <span class="label">Today</span>
-              <span id="hdrDayKm" class="value">0.0</span>
+              <span id="hdrDayKm" class="value">0.00</span>
               <span class="unit">km</span>
             </div>
           </div>
@@ -184,7 +184,7 @@
         <!-- Shown under the HUD until a sensor connects. Bluetooth icon: Material Icons "bluetooth" (Apache License 2.0) -->
         <button id="connectBtn">
           <svg class="bt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.71 7.71 12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
-          <span id="connectTitle">Connect sensor</span>
+          <span id="connectTitle">Connect</span>
         </button>
         <div id="turnToast" role="status" aria-live="polite">
           <div class="turn-title">Turn!</div>
@@ -195,15 +195,15 @@
              connected this shrinks to a small icon so it stays out of the view. -->
         <div id="rideControl">
           <div id="sensorChip" class="sensor-chip" role="status" aria-live="polite"><svg class="bt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.71 7.71 12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg><span id="sensorChipText"></span></div>
-          <div id="tapZone" role="button" aria-label="Toggle auto progress" tabindex="0">
+          <div id="tapZone" role="button" aria-label="Toggle Auto forward" tabindex="0">
             <span id="autoProgressLabel">Auto forward: Off</span>
           </div>
         </div>
         <div id="authToast" role="dialog" aria-live="polite">
           <span>Sign in to save your ride</span>
           <span class="actions">
-            <button id="toastRegister" class="ghost">Register</button>
-            <button id="toastLogin" class="ghost">Login</button>
+            <button id="toastRegister" class="ghost">Sign up</button>
+            <button id="toastLogin" class="ghost">Sign in</button>
             <button id="toastClose" class="ghost" title="Close">×</button>
           </span>
         </div>
@@ -212,7 +212,7 @@
         <div class="section">
           <div class="section-header">
             <h3>User</h3>
-            <button id="btnLogout" class="ghost small" style="display:none;">Logout</button>
+            <button id="btnLogout" class="ghost small" style="display:none;">Sign out</button>
           </div>
           <div class="kvs small">
             <div class="muted">Name:</div><div><span id="userName">—</span> <button id="btnEditName" class="ghost small btn-edit">Edit</button></div>
@@ -220,9 +220,9 @@
           <div class="small muted" style="margin-top:.5rem;">Passkeys:</div>
           <div id="passkeyList" class="small" style="margin:.25rem 0 .5rem 0;"></div>
           <div class="controls" style="margin-top:.5rem;">
-            <button id="btnRegister" class="ghost">Register</button>
-            <button id="btnLogin" class="ghost">Login</button>
-            <button id="btnAddPasskey" class="ghost" style="display:none;">+ Add Passkey</button>
+            <button id="btnRegister" class="ghost">Sign up</button>
+            <button id="btnLogin" class="ghost">Sign in</button>
+            <button id="btnAddPasskey" class="ghost" style="display:none;">+ Add passkey</button>
           </div>
           <div id="authHint" class="small muted" style="margin-top:.5rem; display:none;">Sign in to save your ride.</div>
         </div>

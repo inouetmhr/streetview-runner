@@ -77,14 +77,14 @@ Notes:
 - Controls
   - Menu icon sits at the top-left of the Street View (it moves with the view when the pane opens beside it) and toggles the side pane; it shows × while the pane is open.
   - How the ride moves:
-    - Not connected: a compact "Connect sensor" button right under the HUD (gently pulsing until a ride starts; hidden where Web Bluetooth is unavailable), and the Auto forward Tap Zone near the bottom center (tap, Space or Enter toggles it).
+    - Not connected: a compact "Connect" button (with a Bluetooth icon) right under the HUD (gently pulsing until a ride starts; hidden where Web Bluetooth is unavailable), and the Auto forward Tap Zone near the bottom center (tap, Space or Enter toggles it).
     - Connected (bottom center): a chip shows the sensor name for 3 s and then hides, so nothing covers the view while riding.
-    - Reconnecting: the chip stays expanded and highlighted with the attempt count; after the last attempt it returns to "Connect sensor".
+    - Reconnecting: the chip stays expanded and highlighted with the attempt count; after the last attempt it returns to "Connect".
 - Side Pane: following elements are show in a pane that is collapsible and hidden in default (slides in from the left).
   - Wide screens: the pane sits beside the Street View. Narrow screens (≤900px): it overlays the view; tapping outside it or Esc closes it.
   - History is part of the pane: closing the pane also closes the History view and returns to Street View.
   - The logged-out auth toast is hidden while the pane is open (the pane has the same buttons).
-  - User info: user name with an Edit button, register/login/add-passkey controls; Logout is shown on the User header.
+  - User info: user name with an Edit button, Sign up / Sign in / Add passkey controls; Sign out is shown on the User header.
   - History: day/week/month range selectors with previous/next controls; shows distance, riding time and average speed, plus a per-day list (distance bar and time) in week/month mode, and opens History view.
   - Display name and passkey labels are edited in place (Enter or leaving the field saves, Esc cancels). Removing a passkey and choosing a display name at registration use an in-page dialog, not browser prompts.
   - Device: Device name, active service, connection status; sensor metrics: speed (km/h), cadence (rpm), distance (m).
@@ -93,7 +93,7 @@ Notes:
 - Notices: short messages at the top of the screen for sign-in results and failures (cancelled passkey prompt, rate limit, network), passkey changes and sensor reconnects.
 - Screen wake lock: the screen is kept on while a sensor or Auto forward is driving the ride (re-acquired when the page becomes visible again).
 - Sensor reconnect: after an unexpected BLE disconnect, the same device is retried after 1, 2, 4, 8 and 16 s before reporting "Disconnected".
-- Auth prompt: a small toast is shown near the top center when logged out, prompting Register or Login; hides on successful auth.
+- Auth prompt: a small toast is shown near the top center when logged out, prompting Sign up or Sign in; hides on successful auth.
 - If the Maps API fails to load, a notice asks the user to reload instead of leaving a blank page.
 
 ## Data Model / Storage (KV + D1)

@@ -54,7 +54,6 @@ function authErrorMessage(e, res) {
   if (e?.name === "NotAllowedError" || e?.name === "AbortError") return "Passkey request was cancelled or timed out.";
   if (e?.name === "InvalidStateError") return "This device already has a passkey for this account.";
   if (res?.status === 429) return "Too many attempts. Please wait a minute and try again.";
-  if (res?.data?.error) return `Sign-in failed: ${res.data.error}.`;
   if (e instanceof TypeError) return "Network error. Check your connection and try again.";
   return "Sign-in failed. Please try again.";
 }

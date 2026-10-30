@@ -211,15 +211,15 @@ export function createHistoryView({ getUser, center, onOpenChange }) {
     const range = getHistoryRangeFromInputs();
     if (!range?.from || !range?.to) return showEmpty("Invalid date.");
     historyUI.range.textContent = `${range.from} to ${range.to}`;
-    historyUI.status.textContent = "Loading...";
+    historyUI.status.textContent = "Loading…";
     ensureHistoryMap();
     if (!historyMap) {
-      historyUI.status.textContent = "Maps API not available.";
+      historyUI.status.textContent = "Map is not available.";
       return;
     }
     const data = await fetchHistoryRange(range.from, range.to);
     if (!data?.ok) {
-      historyUI.status.textContent = "Failed to load history.";
+      historyUI.status.textContent = "Could not load history.";
       clearHistoryPolyline();
       return;
     }
