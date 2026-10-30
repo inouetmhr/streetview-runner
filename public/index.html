@@ -24,6 +24,23 @@
       #hudBar .value { font-weight: 700; font-variant-numeric: tabular-nums; }
       #hudBar .unit { font-size:.78rem; opacity:.85; }
       #turnToast { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); background:#dc2626; color:white; padding: 1rem 1.5rem; border-radius:.5rem; font-size: 2rem; display:none; z-index: 11; box-shadow: 0 6px 18px rgba(220,38,38,.4); pointer-events: none; }
+      #turnToast { text-align:center; }
+      #turnToast .turn-choices { display:flex; gap:.5rem; justify-content:center; margin-top:.5rem; pointer-events:auto; }
+      #turnToast .turn-choice { width:48px; height:48px; border-radius:50%; background:white; color:#dc2626; border:none; font-size:1.6rem; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0; }
+      #turnToast .turn-choice span { display:inline-block; }
+      #turnToast .turn-choice:hover { background:#fee2e2; }
+      #turnToast .turn-hint { font-size:.75rem; opacity:.85; margin-top:.4rem; }
+      #notice { position:fixed; left:50%; top:16px; transform:translate(-50%, -150%); max-width:min(92vw, 420px); padding:.6rem 1rem; border-radius:.5rem; background:#0f172a; color:#f8fafc; box-shadow:0 8px 20px rgba(0,0,0,.25); z-index:100; font-size:.9rem; text-align:center; opacity:0; transition:transform .2s ease, opacity .2s ease; pointer-events:none; }
+      #notice.show { transform:translate(-50%, 0); opacity:1; }
+      #notice[data-kind="error"] { background:#b91c1c; }
+      #appDialog { border:none; border-radius:.75rem; padding:1rem 1.1rem; width:min(90vw, 360px); box-shadow:0 12px 32px rgba(0,0,0,.3); }
+      #appDialog::backdrop { background:rgba(15,23,42,.45); }
+      #appDialog h3 { margin:0 0 .5rem; font-size:1rem; }
+      #appDialog p { margin:0 0 .75rem; color:#334155; }
+      #appDialog input { width:100%; box-sizing:border-box; }
+      #appDialog .dialog-actions { display:flex; flex-direction:row-reverse; gap:.5rem; margin-top:.9rem; }
+      #appDialog button.danger { background:#b91c1c; border-color:#b91c1c; }
+      .inline-edit { font:inherit; padding:.15rem .35rem; width:min(100%, 12rem); }
       #tapZone { position:absolute; left:50%; bottom:calc(28px + env(safe-area-inset-bottom)); transform:translateX(-50%); padding:.55rem 1.1rem .6rem; background:rgba(17,24,39,.85); color:white; border-radius: 18px; display:none; flex-direction: column; align-items:center; justify-content:center; gap:.1rem; font-size:.9rem; letter-spacing:.02em; z-index: 12; box-shadow: 0 8px 20px rgba(0,0,0,.2); user-select:none; touch-action: manipulation; }
       #tapZone .tapzone-prefix { font-size:.72rem; opacity:.8; letter-spacing:.02em; text-transform: none; font-weight: 500; }
       #authToast { position: fixed; left: 50%; top: 72px; transform: translateX(-50%); background:#f8fafc; color:#0f172a; padding: .75rem 1rem; border-radius: .5rem; display:none; z-index: 60; box-shadow: 0 8px 18px rgba(37,99,235,.16); border: none; text-align: center; }
@@ -66,6 +83,11 @@
       .section-toggle { cursor:pointer; user-select:none; }
       .history-body { display:none; margin-top: .5rem; }
       .history-body.open { display:block; }
+      .history-days { margin-top:.5rem; }
+      .history-days:empty { display:none; }
+      .history-day { display:grid; grid-template-columns: 5.5rem 1fr auto; gap:.5rem; padding:.15rem 0; border-top:1px solid #e2e8f0; font-variant-numeric: tabular-nums; }
+      .history-day .bar { align-self:center; height:6px; border-radius:3px; background:#93c5fd; }
+      .history-day.empty { color:#94a3b8; }
       .nav-btn { border-color: #d1d5db; }
       body.history-open #pano { display: none; }
       body.history-open #miniMap { display: none; }
@@ -132,7 +154,11 @@
             </div>
           </div>
         </div>
-        <div id="turnToast" role="status" aria-live="polite">Turn!</div>
+        <div id="turnToast" role="status" aria-live="polite">
+          <div class="turn-title">Turn!</div>
+          <div id="turnChoices" class="turn-choices"></div>
+          <div id="turnHint" class="turn-hint">Tap a direction or use the arrow keys</div>
+        </div>
         <div id="tapZone" role="button" aria-label="Toggle auto progress" tabindex="0">
           <span id="autoProgressLabel">Auto forward: Off</span>
           <span class="tapzone-prefix">No sensor</span>
@@ -185,7 +211,10 @@
             <div class="kvs small">
               <div class="muted">Range:</div><div id="historyRange">—</div>
               <div class="muted">Distance:</div><div id="historyDistance">—</div>
+              <div class="muted">Time:</div><div id="historyTime">—</div>
+              <div class="muted">Avg speed:</div><div id="historySpeed">—</div>
             </div>
+            <div id="historyDays" class="history-days small"></div>
             <div id="historyStatus" class="small muted" style="margin-top:.5rem;">—</div>
           </div>
         </div>
@@ -202,6 +231,18 @@
         </div>
       </aside>
     </main>
+    <div id="notice" role="status" aria-live="polite"></div>
+    <dialog id="appDialog">
+      <form method="dialog">
+        <h3 id="appDialogTitle"></h3>
+        <p id="appDialogMessage" class="small"></p>
+        <input id="appDialogInput" maxlength="64" autocomplete="off" />
+        <div class="dialog-actions">
+          <button id="appDialogOk" value="ok">OK</button>
+          <button value="cancel" class="ghost" formnovalidate>Cancel</button>
+        </div>
+      </form>
+    </dialog>
     <script src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_MAPS_API_KEY__&libraries=geometry,marker" defer></script>
     <script src="/app.js" type="module"></script>
   </body>

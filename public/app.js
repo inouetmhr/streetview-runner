@@ -6,7 +6,8 @@ import { createHistoryView } from "./history-view.js";
 import { createSpeedMeter } from "./speed-meter.js";
 import { createVirtualRider } from "./virtual-rider.js";
 import { createTrail } from "./trail.js";
-import { qs, MAP_ID } from "./dom.js";
+import { createWakeLock } from "./wake-lock.js";
+import { qs, MAP_ID, notify } from "./dom.js";
 import {
   loadLastPosition,
   saveLastPosition,
@@ -163,6 +164,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (!map || !pano) return;
   const trail = createTrail(map);
   const speedMeter = createSpeedMeter();
+  const wakeLock = createWakeLock();
+  // Keep the screen on while a sensor or the virtual rider is driving the ride.
+  const updateWakeLock = () => wakeLock.set(!!walker.activeService || virtualRider.state.enabled);
 
   const session = {
     dailyDistanceM: 0,
@@ -188,6 +192,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     tapZone: qs("tapZone"),
     autoProgressLabel: qs("autoProgressLabel"),
     turnToast: qs("turnToast"),
+    turnChoices: qs("turnChoices"),
+    turnHint: qs("turnHint"),
   };
   const deviceStatus = {
     deviceName: qs("deviceName"),
@@ -311,6 +317,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     ui.connectBtn.style.display = isConnected ? "none" : "";
     if (isConnected) virtualRider.disable();
     setTapZoneVisible(!isConnected);
+    updateWakeLock();
+  };
+  walker.onReconnect = (state) => {
+    if (state === "reconnecting") notify("Sensor disconnected. Reconnecting…", { kind: "error" });
+    else if (state === "reconnected") notify("Sensor reconnected.");
+    else notify("Sensor connection lost. Tap Connect Sensor to try again.", { kind: "error" });
   };
   walker.onData = () => {
     const total = walker.sensors.distanceM || 0;
@@ -332,6 +344,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     deviceStatus.status.textContent = state.enabled ? "Connected (Auto)" : "Idle (Auto off)";
     if (ui.autoProgressLabel) ui.autoProgressLabel.textContent = `Auto forward: ${state.enabled ? "On" : "Off"}`;
     updateHudTitleVisibility(state.enabled ? state.speedKmh : 0);
+    updateWakeLock();
   }
 
   const virtualRider = createVirtualRider({
@@ -358,8 +371,73 @@ window.addEventListener("DOMContentLoaded", async () => {
     const changed = session.turnBlocked !== blocked;
     session.turnBlocked = blocked;
     if (ui.turnToast) ui.turnToast.style.display = blocked ? "block" : "none";
+    if (blocked) renderTurnChoices();
     if (blocked && alert && changed) beep(180, 880);
   }
+
+  // Roads available from here, relative to the travel heading (deg, negative = left).
+  function turnOptions() {
+    return (pano.getLinks() || [])
+      .filter((link) => Number.isFinite(link.heading))
+      .map((link) => ({ link, delta: angleDelta(session.travelHeading, link.heading) }));
+  }
+
+  // One arrow button per road, rotated to its direction, so a turn is a single tap.
+  function renderTurnChoices() {
+    if (!ui.turnChoices) return;
+    const options = turnOptions();
+    if (ui.turnHint) {
+      ui.turnHint.textContent = options.length
+        ? "Tap a direction or use the arrow keys"
+        : "No road from here. Move the pegman on the mini map.";
+    }
+    const leftToRight = [...options].sort((a, b) => a.delta - b.delta);
+    // Rebuild only when the choices change, so a tap in progress is not lost.
+    const key = `${Math.round(session.travelHeading)}|${leftToRight.map((o) => o.link.pano).join(",")}`;
+    if (ui.turnChoices.dataset.key === key) return;
+    ui.turnChoices.dataset.key = key;
+    ui.turnChoices.replaceChildren(...leftToRight.map(({ link, delta }) => {
+      const btn = document.createElement("button");
+      btn.className = "turn-choice";
+      btn.title = link.description || `Turn ${Math.round(delta)}°`;
+      btn.setAttribute("aria-label", `Turn ${delta < 0 ? "left" : "right"} ${Math.abs(Math.round(delta))} degrees`);
+      const arrow = document.createElement("span");
+      arrow.textContent = "↑";
+      arrow.style.transform = `rotate(${delta}deg)`;
+      btn.appendChild(arrow);
+      btn.addEventListener("click", () => turnTo(link));
+      return btn;
+    }));
+  }
+
+  // Picks a road by arrow key while the turn prompt is up: ←/→ the nearest road on
+  // that side, ↓ the one most behind (U-turn), ↑ the one closest to straight ahead.
+  function pickTurnByKey(key) {
+    const options = turnOptions();
+    const byAbs = (a, b) => Math.abs(a.delta) - Math.abs(b.delta);
+    let pick = null;
+    if (key === "ArrowLeft") pick = options.filter((o) => o.delta < 0).sort(byAbs)[0];
+    else if (key === "ArrowRight") pick = options.filter((o) => o.delta > 0).sort(byAbs)[0];
+    else if (key === "ArrowDown") pick = options.sort(byAbs).at(-1);
+    else if (key === "ArrowUp") pick = options.sort(byAbs)[0];
+    return pick?.link || null;
+  }
+
+  function turnTo(link) {
+    updateTravelHeading(link.heading);
+    applyProgrammaticPov({ heading: link.heading, pitch: pano.getPov()?.pitch || 0 }, 700);
+    if (session.distanceToGo > 0 && !session.turnBlocked) advance();
+  }
+
+  // Capture phase so Street View's own arrow-key handling does not also run.
+  window.addEventListener("keydown", (e) => {
+    if (!session.turnBlocked || isHistoryOpen || isEditableTarget(e.target)) return;
+    const link = pickTurnByKey(e.key);
+    if (!link) return;
+    e.preventDefault();
+    e.stopPropagation();
+    turnTo(link);
+  }, true);
 
   function applyProgrammaticPov(nextPov, suppressMs = 500) {
     clearTimeout(session.pendingTravelHeadingTimerId);
@@ -508,7 +586,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         || (e instanceof TypeError && /bluetooth|requestdevice/i.test(message));
       const finalMessage = isUnsupported ? UNSUPPORTED_BLE_MESSAGE : message;
       deviceStatus.status.textContent = finalMessage;
-      alert(finalMessage);
+      notify(finalMessage, { kind: "error" });
     }
   }
   ui.connectBtn?.addEventListener("click", doConnect);

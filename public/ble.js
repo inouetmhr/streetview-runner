@@ -8,14 +8,19 @@ class Metrics {
   }
 }
 
+// Retry delays (ms) after an unexpected disconnect, before giving up.
+const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
+
 export class BLEWalker {
   constructor() {
     this.device = null;
     this.server = null;
     this.onData = null; // () => void; consumer reads this.metrics/this
     this.sensors = new Metrics();
-    this._activeService = null; // 'FTMS' | null
+    this._activeService = null; // "FTMS" | null
+    this._session = 0; // bumped on every connect/disconnect so stale reconnect loops stop
     this.onConnectionChange = null; // (isConnected:boolean) => void
+    this.onReconnect = null; // (state: "reconnecting" | "reconnected" | "failed") => void
   }
   get activeService() { return this._activeService; }
   async connect() {
@@ -24,16 +29,46 @@ export class BLEWalker {
       filters: [{ services: [0x1826] }],
       optionalServices: [0x1826],
     };
-    this.device = await navigator.bluetooth.requestDevice(options);
-    this.device.addEventListener("gattserverdisconnected", () => this._onDisconnected());
-    this.server = await this.device.gatt.connect();
+    const device = await navigator.bluetooth.requestDevice(options);
+    const session = ++this._session;
+    this.device = device;
+    device.addEventListener("gattserverdisconnected", () => {
+      if (this.device === device && this._session === session) this._reconnect(session);
+    });
+    this.server = await device.gatt.connect();
     // Only FTMS is supported
     if (await this._tryFTMS()) return;
     this._status("Connected (no FTMS service)");
     try { this.onConnectionChange?.(false); } catch {}
   }
   async disconnect() {
+    this._session++;
     try { this.device?.gatt?.disconnect(); } catch {}
+    this._onDisconnected();
+  }
+  // The sensor dropped out (out of range, power saving): try the same device again
+  // before reporting a disconnect, so a short dropout does not end the ride.
+  async _reconnect(session) {
+    this._activeService = null;
+    this.server = null;
+    try { this.onReconnect?.("reconnecting"); } catch {}
+    for (let i = 0; i < RECONNECT_DELAYS_MS.length; i++) {
+      this._status(`Reconnecting… (${i + 1}/${RECONNECT_DELAYS_MS.length})`);
+      await new Promise((r) => setTimeout(r, RECONNECT_DELAYS_MS[i]));
+      if (this._session !== session) return;
+      try {
+        this.server = await this.device.gatt.connect();
+        if (this._session !== session) return;
+        if (await this._tryFTMS()) {
+          try { this.onReconnect?.("reconnected"); } catch {}
+          return;
+        }
+      } catch (e) {
+        console.warn("BLE reconnect failed", e);
+      }
+    }
+    if (this._session !== session) return;
+    try { this.onReconnect?.("failed"); } catch {}
     this._onDisconnected();
   }
   _onDisconnected() {

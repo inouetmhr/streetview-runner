@@ -76,7 +76,7 @@ describe("summarizeHistory", () => {
     expect(distanceMeters).toBeLessThan(225);
   });
   it("returns 0 for fewer than two points", () => {
-    expect(summarizeHistory([{ lat: 0, lng: 0 }])).toEqual({ distanceMeters: 0, count: 1 });
+    expect(summarizeHistory([{ lat: 0, lng: 0 }])).toEqual({ distanceMeters: 0, movingSeconds: 0, count: 1 });
   });
 });
 
@@ -91,5 +91,26 @@ describe("base64url and cookies", () => {
     const req = new Request("https://x.test/", { headers: { cookie: "a=1; svr_session=ab=c" } });
     expect(getCookie(req, "svr_session")).toBe("ab=c");
     expect(getCookie(req, "missing")).toBeNull();
+  });
+});
+
+describe("summarizeHistory moving time and days", () => {
+  const MIN = 60 * 1000;
+  // ~111 m per 0.001° of latitude
+  const pt = (day, i, tsMin) => ({ day, lat: 35 + i * 0.001, lng: 139, ts: tsMin * MIN });
+
+  it("counts gaps up to 5 minutes as riding and longer ones as breaks", () => {
+    const s = summarizeHistory([{ lat: 35, lng: 139, ts: 0 }, { lat: 35.001, lng: 139, ts: 1 * MIN }, { lat: 35.002, lng: 139, ts: 30 * MIN }]);
+    expect(s.movingSeconds).toBe(60);
+    expect(s.distanceMeters).toBeGreaterThan(220);
+    expect(s.days).toBeUndefined();
+  });
+
+  it("splits by day and never joins the last point of one day to the next", () => {
+    const s = summarizeHistory([pt("2026-10-29", 0, 0), pt("2026-10-29", 1, 1), pt("2026-10-30", 2, 2), pt("2026-10-30", 3, 3)]);
+    expect(s.days.map((d) => d.day)).toEqual(["2026-10-29", "2026-10-30"]);
+    expect(s.days.every((d) => d.movingSeconds === 60 && d.count === 2)).toBe(true);
+    expect(s.distanceMeters).toBeCloseTo(s.days[0].distanceMeters + s.days[1].distanceMeters);
+    expect(s.distanceMeters).toBeLessThan(250); // the cross-day segment is not counted
   });
 });

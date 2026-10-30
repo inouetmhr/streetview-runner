@@ -66,24 +66,47 @@ export function normalizeHistoryRange(fromParam, toParam) {
   return { from, to };
 }
 
-export function summarizeHistory(items) {
-  if (!Array.isArray(items) || items.length < 2) {
-    return { distanceMeters: 0, count: Array.isArray(items) ? items.length : 0 };
-  }
+// Gaps between saved points longer than this are breaks, not riding time.
+export const MAX_MOVING_GAP_MS = 5 * 60 * 1000;
+
+function summarizePoints(points) {
   let distanceMeters = 0;
+  let movingSeconds = 0;
   let prev = null;
-  for (const item of items) {
+  for (const item of points) {
     if (!item || !isFinite(item.lat) || !isFinite(item.lng)) continue;
-    const current = { lat: Number(item.lat), lng: Number(item.lng) };
+    const current = { lat: Number(item.lat), lng: Number(item.lng), ts: Number(item.ts) };
     if (prev) {
       const seg = distMeters(prev, current);
       if (seg <= MAX_SEGMENT_M) {
         distanceMeters += seg;
+        const gap = current.ts - prev.ts;
+        if (gap > 0 && gap <= MAX_MOVING_GAP_MS) movingSeconds += gap / 1000;
       }
     }
     prev = current;
   }
-  return { distanceMeters, count: items.length };
+  return { distanceMeters, movingSeconds: Math.round(movingSeconds), count: points.length };
+}
+
+// Totals for a list of history items. Items carrying `day` are summarized per day
+// (no segment spans two days) and also returned as `days`, sorted by day.
+export function summarizeHistory(items) {
+  if (!Array.isArray(items)) return { distanceMeters: 0, movingSeconds: 0, count: 0 };
+  if (!items.some((item) => item?.day)) return summarizePoints(items);
+  const groups = new Map();
+  for (const item of items) {
+    const key = item?.day || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  const days = [...groups].sort(([a], [b]) => (a < b ? -1 : 1)).map(([day, points]) => ({ day, ...summarizePoints(points) }));
+  return {
+    distanceMeters: days.reduce((s, d) => s + d.distanceMeters, 0),
+    movingSeconds: days.reduce((s, d) => s + d.movingSeconds, 0),
+    count: items.length,
+    days,
+  };
 }
 
 // Base64URL helpers (Uint8Array <-> base64url string)

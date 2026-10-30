@@ -10,6 +10,31 @@ import {
 } from "./geo.js";
 import { qs, MAP_ID } from "./dom.js";
 
+// 3725 s -> "1:02" (h:mm); under an hour -> "12 min".
+export function formatDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+export function formatAvgSpeed(distanceMeters, seconds) {
+  if (!Number.isFinite(distanceMeters) || !Number.isFinite(seconds) || seconds <= 0) return "—";
+  return `${(distanceMeters / seconds * 3.6).toFixed(1)} km/h`;
+}
+
+// Every day from `from` to `to` (inclusive), so days without a ride still show up.
+function daysBetween(from, to) {
+  const out = [];
+  const d = parseDateStringUTC(from);
+  const end = parseDateStringUTC(to);
+  while (d && end && d <= end) {
+    out.push(toDateStringUTC(d));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
+}
+
 function getLocaleFirstDayIndex() {
   try {
     const locale = new Intl.Locale(navigator.language);
@@ -40,6 +65,9 @@ export function createHistoryView({ getUser, center, onOpenChange }) {
     inputMonth: qs("historyMonth"),
     range: qs("historyRange"),
     distance: qs("historyDistance"),
+    time: qs("historyTime"),
+    speed: qs("historySpeed"),
+    days: qs("historyDays"),
     status: qs("historyStatus"),
   };
   const firstDayIndex = getLocaleFirstDayIndex();
@@ -134,10 +162,43 @@ export function createHistoryView({ getUser, center, onOpenChange }) {
     if (historyUI.inputMonth) historyUI.inputMonth.value = nextStr;
   }
 
+  function renderSummary(summary) {
+    const distanceMeters = summary?.distanceMeters;
+    historyUI.distance.textContent = Number.isFinite(distanceMeters)
+      ? `${(distanceMeters / 1000).toFixed(2)} km`
+      : "—";
+    if (historyUI.time) historyUI.time.textContent = formatDuration(summary?.movingSeconds);
+    if (historyUI.speed) historyUI.speed.textContent = formatAvgSpeed(distanceMeters, summary?.movingSeconds);
+  }
+
+  // Week and month views list each day with a bar scaled to the longest ride.
+  function renderDays(range, summary) {
+    if (!historyUI.days) return;
+    if (historyMode === "day") return historyUI.days.replaceChildren();
+    const byDay = new Map((summary?.days || []).map((d) => [d.day, d]));
+    const max = Math.max(1, ...[...byDay.values()].map((d) => d.distanceMeters));
+    const weekday = new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" });
+    historyUI.days.replaceChildren(...daysBetween(range.from, range.to).map((day) => {
+      const d = byDay.get(day);
+      const row = document.createElement("div");
+      row.className = d ? "history-day" : "history-day empty";
+      const label = document.createElement("span");
+      label.textContent = `${weekday.format(parseDateStringUTC(day))} ${day.slice(5).replace("-", "/")}`;
+      const bar = document.createElement("span");
+      bar.className = "bar";
+      bar.style.width = d ? `${Math.max(4, (d.distanceMeters / max) * 100)}%` : "0";
+      const value = document.createElement("span");
+      value.textContent = d ? `${(d.distanceMeters / 1000).toFixed(2)} km · ${formatDuration(d.movingSeconds)}` : "—";
+      row.append(label, bar, value);
+      return row;
+    }));
+  }
+
   function showEmpty(message) {
     historyUI.status.textContent = message;
     historyUI.range.textContent = "—";
-    historyUI.distance.textContent = "—";
+    renderSummary(null);
+    historyUI.days?.replaceChildren();
     clearHistoryPolyline();
   }
 
@@ -163,10 +224,8 @@ export function createHistoryView({ getUser, center, onOpenChange }) {
       return;
     }
     const items = Array.isArray(data.items) ? data.items : [];
-    const distanceMeters = data.summary?.distanceMeters;
-    historyUI.distance.textContent = Number.isFinite(distanceMeters)
-      ? `${(distanceMeters / 1000).toFixed(2)} km`
-      : "—";
+    renderSummary(data.summary);
+    renderDays(range, data.summary);
     if (!items.length) {
       historyUI.status.textContent = "No history in this range.";
       clearHistoryPolyline();

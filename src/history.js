@@ -22,7 +22,7 @@ async function getHistoryFromD1(env, userId, day) {
 
 async function getHistoryRangeFromD1(env, userId, fromDay, toDay) {
   const res = await env.SVR_DB
-    .prepare("SELECT lat, lng, heading, ts FROM history WHERE user_id = ?1 AND day >= ?2 AND day <= ?3 ORDER BY day ASC, ts ASC")
+    .prepare("SELECT day, lat, lng, heading, ts FROM history WHERE user_id = ?1 AND day >= ?2 AND day <= ?3 ORDER BY day ASC, ts ASC")
     .bind(userId, fromDay, toDay)
     .all();
   return Array.isArray(res?.results) ? res.results : [];

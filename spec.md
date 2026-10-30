@@ -26,9 +26,10 @@
   - 200 `{ ok: true, status: { lat:number, lng:number, heading:number, ts:number }, dailyDistanceMeters:number, day:string }`
   - With D1 enabled, status is derived from the latest history point (any day). `dailyDistanceMeters` sums the given ride day (defaults to the server's UTC day).
 - GET `/api/history?day=YYYY-MM-DD`
-  - 200 `{ ok: true, items: Array<{ lat,lng,heading,ts }>, summary:{ distanceMeters:number, count:number } }`; day defaults to today.
+  - 200 `{ ok: true, items: Array<{ lat,lng,heading,ts }>, summary:{ distanceMeters:number, movingSeconds:number, count:number } }`; day defaults to today.
 - GET `/api/history?from=YYYY-MM-DD&to=YYYY-MM-DD`
-  - 200 `{ ok: true, items: Array<{ lat,lng,heading,ts }>, summary:{ distanceMeters:number, count:number } }`
+  - 200 `{ ok: true, items: Array<{ day,lat,lng,heading,ts }>, summary:{ distanceMeters:number, movingSeconds:number, count:number, days: Array<{ day, distanceMeters, movingSeconds, count }> } }`
+  - Distance and time are summed per day; a segment never joins the last point of one day to the next. `movingSeconds` counts gaps of up to 5 minutes between saved points (longer gaps are breaks).
   - The range is inclusive and limited to 31 days; wider ranges return 400.
 - POST `/api/history`
   - Body `{ point:{ lat:number, lng:number, heading?:number, ts?:number, day?:string } }`
@@ -79,10 +80,14 @@ Notes:
   - Tap Zone is fixed near the bottom center; tapping or Space boosts virtual speed (hidden when BLE is connected).
 - Side Pane: following elements are show in a pane that is collapsible and hidden in default (slides in from the left).
   - User info: user name with an Edit button, register/login/add-passkey controls; Logout is shown on the User header.
-  - History: day/week/month range selectors with previous/next controls; shows total distance and opens History view.
+  - History: day/week/month range selectors with previous/next controls; shows distance, riding time and average speed, plus a per-day list (distance bar and time) in week/month mode, and opens History view.
+  - Display name and passkey labels are edited in place (Enter or leaving the field saves, Esc cancels). Removing a passkey and choosing a display name at registration use an in-page dialog, not browser prompts.
   - Device: Device name, active service, connection status; sensor metrics: speed (km/h), cadence (rpm), distance (m).
 - Interactions: choose forward link closest to current heading;  auto‑align POV to link heading when turn >45°.
-- "Turn!" notify toast and beep to request the user to choose direction.
+- "Turn!" toast and beep request the user to choose a direction. The toast shows one arrow button per road from the current panorama (rotated to its direction, left to right); while it is shown, ←/→ pick the nearest road on that side, ↑ the straightest and ↓ a U-turn. With no road links it tells the user to move the pegman.
+- Notices: short messages at the top of the screen for sign-in results and failures (cancelled passkey prompt, rate limit, network), passkey changes and sensor reconnects.
+- Screen wake lock: the screen is kept on while a sensor or Auto forward is driving the ride (re-acquired when the page becomes visible again).
+- Sensor reconnect: after an unexpected BLE disconnect, the same device is retried after 1, 2, 4, 8 and 16 s before reporting "Disconnected".
 - Auth prompt: a small toast is shown near the top center when logged out, prompting Register or Login; hides on successful auth.
 
 ## Data Model / Storage (KV + D1)
@@ -97,7 +102,7 @@ Notes:
 - `cred:v1:{credentialId}` → `{ userId }` (lookup by credential ID)
 - `challenge:v1:reg:{flowId}` → `{ challenge, userId, username, createdAt }` (ephemeral; TTL ~10m)
 - `challenge:v1:auth:{flowId}` → `{ challenge, createdAt }` (ephemeral; TTL ~10m)
-- `sess:v1:{token}` → `{ userId, credentialId?, createdAt }` (long‑lived; no TTL or 1y)
+- `sess:v1:{token}` → `{ userId, credentialId, createdAt, renewedAt }` (1y TTL, renewed at most every 30 days)
 
 ## Behavior
 - On auth (startup)

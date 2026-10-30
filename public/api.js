@@ -49,57 +49,58 @@ export async function getSession() {
   try { return (await getJson("/api/auth/session"))?.user || null; } catch { return null; }
 }
 
-export async function registerWithPasskey(username) {
+// Turns a failed passkey step into a message for the user.
+function authErrorMessage(e, res) {
+  if (e?.name === "NotAllowedError" || e?.name === "AbortError") return "Passkey request was cancelled or timed out.";
+  if (e?.name === "InvalidStateError") return "This device already has a passkey for this account.";
+  if (res?.status === 429) return "Too many attempts. Please wait a minute and try again.";
+  if (res?.data?.error) return `Sign-in failed: ${res.data.error}.`;
+  if (e instanceof TypeError) return "Network error. Check your connection and try again.";
+  return "Sign-in failed. Please try again.";
+}
+
+// Runs options → browser ceremony → verify. Returns { user } or { error }.
+async function passkeyFlow(optionsPath, verifyPath, ceremony, extraBody = {}) {
+  let res = null;
   try {
-    const opt = await postJson("/api/auth/register/options", { username });
-    if (!opt.ok) throw new Error("reg options failed");
-    const { options, flowId } = opt.data;
-    const { startRegistration } = await import(SIMPLEWEBAUTHN_BROWSER_URL);
-    const attResp = await startRegistration({ optionsJSON: options });
-    const passkeyLabel = suggestPasskeyLabel();
-    const res = await postJson("/api/auth/register/verify", { flowId, response: attResp, passkeyLabel });
-    if (!res.ok) throw new Error("reg verify failed");
-    return res.data?.user || null;
+    res = await postJson(optionsPath, extraBody.optionsBody);
+    if (!res.ok) return { error: authErrorMessage(null, res) };
+    const { options, flowId } = res.data;
+    const browser = await import(SIMPLEWEBAUTHN_BROWSER_URL);
+    const response = await ceremony(browser, options);
+    res = await postJson(verifyPath, { flowId, response, ...extraBody.verifyBody });
+    if (!res.ok) return { error: authErrorMessage(null, res) };
+    return { user: res.data?.user || null };
   } catch (e) {
-    console.warn("register error", e);
-    return null;
+    console.warn("passkey flow error", e);
+    return { error: authErrorMessage(e, null) };
   }
 }
 
-export async function addPasskey() {
-  try {
-    const opt = await postJson("/api/auth/passkeys/options");
-    if (!opt.ok) throw new Error("passkey options failed");
-    const { options, flowId } = opt.data;
-    const { startRegistration } = await import(SIMPLEWEBAUTHN_BROWSER_URL);
-    const attResp = await startRegistration({ optionsJSON: options });
-    const suggested = suggestPasskeyLabel();
-    const input = prompt("Label this passkey:", suggested);
-    if (input === null) return null;
-    const passkeyLabel = (input || "").trim() || suggested;
-    const res = await postJson("/api/auth/passkeys/verify", { flowId, response: attResp, passkeyLabel });
-    if (!res.ok) throw new Error("passkey verify failed");
-    return res.data?.user || null;
-  } catch (e) {
-    console.warn("add passkey error", e);
-    return null;
-  }
+export function registerWithPasskey(username) {
+  return passkeyFlow(
+    "/api/auth/register/options",
+    "/api/auth/register/verify",
+    (b, optionsJSON) => b.startRegistration({ optionsJSON }),
+    { optionsBody: { username }, verifyBody: { passkeyLabel: suggestPasskeyLabel() } },
+  );
 }
 
-export async function loginWithPasskey() {
-  try {
-    const opt = await postJson("/api/auth/login/options");
-    if (!opt.ok) throw new Error("auth options failed");
-    const { options, flowId } = opt.data;
-    const { startAuthentication } = await import(SIMPLEWEBAUTHN_BROWSER_URL);
-    const asn = await startAuthentication({ optionsJSON: options });
-    const res = await postJson("/api/auth/login/verify", { flowId, response: asn });
-    if (!res.ok) throw new Error("auth verify failed");
-    return res.data?.user || null;
-  } catch (e) {
-    console.warn("login error", e);
-    return null;
-  }
+export function addPasskey() {
+  return passkeyFlow(
+    "/api/auth/passkeys/options",
+    "/api/auth/passkeys/verify",
+    (b, optionsJSON) => b.startRegistration({ optionsJSON }),
+    { verifyBody: { passkeyLabel: suggestPasskeyLabel() } },
+  );
+}
+
+export function loginWithPasskey() {
+  return passkeyFlow(
+    "/api/auth/login/options",
+    "/api/auth/login/verify",
+    (b, optionsJSON) => b.startAuthentication({ optionsJSON }),
+  );
 }
 
 export async function logoutSession() {

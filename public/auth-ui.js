@@ -9,7 +9,8 @@ import {
   deletePasskey,
   renamePasskey,
 } from "./api.js";
-import { qs } from "./dom.js";
+import { qs, notify } from "./dom.js";
+import { askText, askConfirm } from "./dialog.js";
 
 // Generate friendly display names like "Blue Dragon"
 export function generateFriendlyName() {
@@ -23,6 +24,33 @@ export function generateFriendlyName() {
   const b = right[Math.floor(Math.random() * right.length)];
   return `${a} ${b}`;
 }
+
+// Swaps `span` for a text input in place. Enter or leaving the field saves, Esc cancels.
+// onSave(value) runs only for a changed, non-empty value.
+function editInPlace(span, current, onSave, { maxLength = 64 } = {}) {
+  const input = document.createElement("input");
+  input.className = "inline-edit";
+  input.value = current;
+  input.maxLength = maxLength;
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const value = input.value.trim();
+    input.replaceWith(span);
+    if (save && value && value !== current) await onSave(value);
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
+  span.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+const errorText = (res, fallback) => (res?.error?.error ? `${fallback}: ${res.error.error}.` : `${fallback}.`);
 
 /**
  * Wires the user/passkey UI.
@@ -44,6 +72,26 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
     renderPasskeys();
   };
 
+  const renamePasskeyInPlace = (item, label, span) => {
+    editInPlace(span, label, async (next) => {
+      const res = await renamePasskey(item.id, next);
+      if (!res.ok) return notify(errorText(res, "Could not rename the passkey"), { kind: "error" });
+      applyPasskeyResult(res);
+    });
+  };
+
+  const removePasskey = async (item) => {
+    const isCurrent = item.id && passkeyCurrentId && item.id === passkeyCurrentId;
+    const message = isCurrent
+      ? "This is the passkey you are signed in with. This device will be signed out."
+      : "Devices signed in with this passkey will be signed out.";
+    if (!(await askConfirm("Remove this passkey?", message, { okLabel: "Remove", danger: true }))) return;
+    const res = await deletePasskey(item.id);
+    if (!res.ok) return notify(errorText(res, "Could not remove the passkey"), { kind: "error" });
+    applyPasskeyResult(res);
+    notify("Passkey removed.");
+  };
+
   const renderPasskeys = () => {
     if (!uiUser.passkeyList) return;
     if (!sessionUser) {
@@ -54,59 +102,33 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
       uiUser.passkeyList.textContent = "none";
       return;
     }
-    uiUser.passkeyList.innerHTML = "";
-    passkeyItems.forEach((item, index) => {
+    uiUser.passkeyList.replaceChildren(...passkeyItems.map((item, index) => {
       const row = document.createElement("div");
       row.className = "passkey-row";
       const currentLabel = item.label ? item.label : `Passkey ${index + 1}`;
       const left = document.createElement("div");
       left.className = "passkey-name";
-      const actions = document.createElement("div");
-      actions.className = "passkey-actions";
+      const label = document.createElement("span");
+      label.textContent = currentLabel;
       const btnRename = document.createElement("button");
       btnRename.className = "ghost small btn-edit";
       btnRename.textContent = "Edit";
       btnRename.title = "Edit passkey label";
       btnRename.setAttribute("aria-label", "Rename passkey");
-      btnRename.addEventListener("click", async () => {
-        const next = prompt("Rename passkey:", currentLabel);
-        if (next === null) return;
-        const trimmed = (next || "").trim();
-        if (!trimmed) return;
-        const res = await renamePasskey(item.id, trimmed);
-        if (!res.ok) {
-          alert(res.error?.error || "Failed to rename passkey.");
-          return;
-        }
-        applyPasskeyResult(res);
-      });
-      const label = document.createElement("span");
-      label.textContent = currentLabel;
+      btnRename.addEventListener("click", () => renamePasskeyInPlace(item, currentLabel, label));
+      const actions = document.createElement("div");
+      actions.className = "passkey-actions";
       const btnRemove = document.createElement("button");
       btnRemove.className = "ghost small icon";
       btnRemove.textContent = "🗑";
       btnRemove.title = "Remove passkey";
       btnRemove.setAttribute("aria-label", "Remove passkey");
-      btnRemove.addEventListener("click", async () => {
-        const isCurrent = item.id && passkeyCurrentId && item.id === passkeyCurrentId;
-        const message = isCurrent
-          ? "WARN: This is the passkey CURRENTLY USED. Remove anyway?"
-          : "Remove this passkey?";
-        if (!confirm(message)) return;
-        const res = await deletePasskey(item.id);
-        if (!res.ok) {
-          alert(res.error?.error || "Failed to remove passkey.");
-          return;
-        }
-        applyPasskeyResult(res);
-      });
-      left.appendChild(label);
-      left.appendChild(btnRename);
-      actions.appendChild(btnRemove);
-      row.appendChild(left);
-      row.appendChild(actions);
-      uiUser.passkeyList.appendChild(row);
-    });
+      btnRemove.addEventListener("click", () => removePasskey(item));
+      left.append(label, btnRename);
+      actions.append(btnRemove);
+      row.append(left, actions);
+      return row;
+    }));
   };
 
   const refreshPasskeys = async () => {
@@ -134,6 +156,7 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
   const completeLogin = async (user, wasAnonymous) => {
     sessionUser = user;
     updateUserUI();
+    notify(`Signed in as ${user.username || "Runner"}.`);
     await onLogin(user, { wasAnonymous });
     await refreshPasskeys();
   };
@@ -141,24 +164,27 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
   const doRegister = async () => {
     const wasAnonymous = !sessionUser;
     const suggested = generateFriendlyName();
-    const input = prompt("Choose your display name:", suggested);
+    const input = await askText("Choose your display name", suggested, { okLabel: "Create passkey" });
     if (input === null) return; // user canceled
-    const username = (input || "").trim() || suggested;
-    const user = await registerWithPasskey(username);
+    const username = input.trim() || suggested;
+    const { user, error } = await registerWithPasskey(username);
+    if (error) return notify(error, { kind: "error" });
     if (user) await completeLogin(user, wasAnonymous);
   };
   const doLogin = async () => {
-    const user = await loginWithPasskey();
+    const { user, error } = await loginWithPasskey();
+    if (error) return notify(error, { kind: "error" });
     if (user) await completeLogin(user, false);
   };
   const doAddPasskey = async () => {
     if (!sessionUser) return;
-    const user = await addPasskey();
+    const { user, error } = await addPasskey();
+    if (error) return notify(error, { kind: "error" });
     if (user) {
       sessionUser = user;
       updateUserUI();
       await refreshPasskeys();
-      alert("Passkey added to your account.");
+      notify("Passkey added. Use Edit to rename it.");
     }
   };
   const doLogout = async () => {
@@ -168,15 +194,14 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
     // Reload to reset app state and enforce unauthenticated flows
     location.reload();
   };
-  const doEditName = async () => {
+  const doEditName = () => {
     if (!sessionUser) return;
-    const suggested = sessionUser.username || generateFriendlyName();
-    const next = prompt("Edit display name:", suggested);
-    if (next === null) return;
-    const name = (next || "").trim();
-    if (!name) return;
-    const updated = await updateUsername(name);
-    if (updated) { sessionUser = updated; updateUserUI(); }
+    editInPlace(uiUser.name, sessionUser.username || "", async (name) => {
+      const updated = await updateUsername(name);
+      if (!updated) return notify("Could not update the display name.", { kind: "error" });
+      sessionUser = updated;
+      updateUserUI();
+    }, { maxLength: 32 });
   };
 
   uiUser.btnReg?.addEventListener("click", doRegister);
