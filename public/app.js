@@ -36,8 +36,20 @@ const SPEED_DECAY_DELAY_MS = 5000; // start (and repeat) decaying this long afte
 const VISIBILITY_SYNC_MS = 60 * 1000;
 const UNSUPPORTED_BLE_MESSAGE = "Web Bluetooth isn’t supported on Firefox or iOS.";
 
+// The Maps loader runs with loading=async, so classes are available only after importLibrary.
+async function loadMapsLibraries() {
+  if (!window.google?.maps?.importLibrary) return false;
+  try {
+    await Promise.all(["core", "maps", "streetView"].map((name) => google.maps.importLibrary(name)));
+    return true;
+  } catch (e) {
+    console.warn("Google Maps libraries failed to load", e);
+    return false;
+  }
+}
+
 function initMap(start) {
-  if (!window.google || !google.maps) {
+  if (!window.google?.maps?.StreetViewPanorama) {
     console.warn("Google Maps API not available. Set GOOGLE_MAPS_API_KEY.");
     return null;
   }
@@ -69,9 +81,9 @@ function initMap(start) {
   return [map, pano];
 }
 
-async function getStartState(userId) {
+function getStartState(userId, statusResp) {
   const local = loadLastPosition(userId);
-  const statusResp = userId ? await fetchStatus(rideDay()) : null;
+  if (!userId) statusResp = null;
   const server = statusResp?.status || null;
   return { local, statusResp, resolved: resolveLatestPosition(local, server) };
 }
@@ -137,8 +149,18 @@ window.addEventListener("DOMContentLoaded", async () => {
     document.body.classList.toggle("auth-visible", show && !isHistoryOpen);
   }
 
+  // Maps, the session, status and today's history do not depend on each other, so
+  // load them together; status and history simply come back empty when signed out.
+  const startDay = rideDay();
+  const [mapsReady, initialUser, startStatus, startHistory] = await Promise.all([
+    loadMapsLibraries(),
+    getSession(),
+    fetchStatus(startDay),
+    fetchHistoryDay(startDay),
+  ]);
+
   const auth = createAuthUI({
-    initialUser: await getSession(),
+    initialUser,
     setAuthToastVisible,
     onBeforeLogout: () => {
       const pos = captureCurrentPosition();
@@ -155,12 +177,13 @@ window.addEventListener("DOMContentLoaded", async () => {
     },
   });
   const currentUserId = () => auth.getUser()?.userId;
+  if (initialUser) auth.refreshPasskeys(); // side pane only; nothing waits for it
 
   // Map init: prefer server if newer; otherwise keep newer local position
-  const initialStart = await getStartState(currentUserId());
+  const initialStart = getStartState(currentUserId(), startStatus);
   let lastVisibilitySyncAt = Date.now();
   const last = initialStart.resolved.pos;
-  [map, pano] = initMap(last || DEFAULT_LOCATION) || [];
+  if (mapsReady) [map, pano] = initMap(last || DEFAULT_LOCATION) || [];
   if (!map || !pano) return;
   const trail = createTrail(map);
   const speedMeter = createSpeedMeter();
@@ -270,7 +293,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   // After login tasks: refresh status and load today's history trail
   async function afterLogin() {
     try {
-      const nextStart = await getStartState(currentUserId());
+      const [statusResp, historyData] = await Promise.all([fetchStatus(rideDay()), fetchHistoryDay(session.dayStr)]);
+      const nextStart = getStartState(currentUserId(), statusResp);
       const next = nextStart.resolved.pos;
       if (next && Number.isFinite(next.lat) && Number.isFinite(next.lng)) {
         try {
@@ -286,7 +310,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         } catch {}
       }
       applyServerDailyDistance(nextStart.statusResp, nextStart.resolved.preferLocal);
-      await loadHistoryAndMarkers();
+      applyTodayHistory(historyData);
     } catch {}
   }
 
@@ -596,10 +620,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   applyServerDailyDistance(initialStart.statusResp, initialStart.resolved.preferLocal);
   renderDayKm();
 
-  // Load today's history and draw it as a trail on mini map (no distance calc)
-  async function loadHistoryAndMarkers() {
+  // Draw today's history as a trail on mini map (no distance calc)
+  function applyTodayHistory(data) {
     try {
-      const data = await fetchHistoryDay(session.dayStr);
       if (!data?.ok) return;
       const items = Array.isArray(data.items) ? data.items : [];
       const points = items
@@ -611,10 +634,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       if (lastPoint) session.prevPosition = lastPoint;
     } catch {}
   }
-  if (auth.getUser()) {
-    await loadHistoryAndMarkers();
-    await auth.refreshPasskeys();
-  }
+  if (auth.getUser()) applyTodayHistory(startHistory);
   setTurnBlocked(isTurnBlocked(pano, session.travelHeading));
 
   function refreshPanoLayout() {

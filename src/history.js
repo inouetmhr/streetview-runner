@@ -12,11 +12,14 @@ import {
 } from "./lib.js";
 
 // ---------- D1 access ----------
-async function getHistoryFromD1(env, userId, day) {
-  const res = await env.SVR_DB
+function dayHistoryStatement(env, userId, day) {
+  return env.SVR_DB
     .prepare("SELECT lat, lng, heading, ts FROM history WHERE user_id = ?1 AND day = ?2 ORDER BY ts ASC")
-    .bind(userId, day)
-    .all();
+    .bind(userId, day);
+}
+
+async function getHistoryFromD1(env, userId, day) {
+  const res = await dayHistoryStatement(env, userId, day).all();
   return Array.isArray(res?.results) ? res.results : [];
 }
 
@@ -28,12 +31,23 @@ async function getHistoryRangeFromD1(env, userId, fromDay, toDay) {
   return Array.isArray(res?.results) ? res.results : [];
 }
 
-async function getLatestHistoryFromD1(env, userId) {
-  // ORDER BY day, ts so the (user_id, day, ts) index serves the query.
-  return await env.SVR_DB
+// ORDER BY day, ts so the (user_id, day, ts) index serves the query.
+function latestHistoryStatement(env, userId) {
+  return env.SVR_DB
     .prepare("SELECT lat, lng, heading, ts FROM history WHERE user_id = ?1 ORDER BY day DESC, ts DESC LIMIT 1")
-    .bind(userId)
-    .first();
+    .bind(userId);
+}
+
+// Latest point and the given day's points in one D1 round trip.
+async function getStatusFromD1(env, userId, day) {
+  const [latest, dayItems] = await env.SVR_DB.batch([
+    latestHistoryStatement(env, userId),
+    dayHistoryStatement(env, userId, day),
+  ]);
+  return {
+    status: latest?.results?.[0] || null,
+    items: Array.isArray(dayItems?.results) ? dayItems.results : [],
+  };
 }
 
 async function putHistoryToD1(env, userId, day, item) {
@@ -50,9 +64,9 @@ async function getStatus({ env, url, userId }) {
   let status = null;
   let dailyDistanceMeters = 0;
   if (env.SVR_DB) {
-    status = await getLatestHistoryFromD1(env, userId);
-    const items = await getHistoryFromD1(env, userId, day);
-    dailyDistanceMeters = summarizeHistory(items).distanceMeters || 0;
+    const res = await getStatusFromD1(env, userId, day);
+    status = res.status;
+    dailyDistanceMeters = summarizeHistory(res.items).distanceMeters || 0;
   }
   return json({ ok: true, status: status || null, dailyDistanceMeters, day });
 }

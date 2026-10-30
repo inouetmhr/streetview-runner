@@ -4,6 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Street View Runner</title>
+    <!-- Fetch every module up front instead of discovering imports one level at a time. -->
+    <link rel="modulepreload" href="/app.js" />
+    <link rel="modulepreload" href="/api.js" />
+    <link rel="modulepreload" href="/ble.js" />
+    <link rel="modulepreload" href="/geo.js" />
+    <link rel="modulepreload" href="/dom.js" />
+    <link rel="modulepreload" href="/dialog.js" />
+    <link rel="modulepreload" href="/auth-ui.js" />
+    <link rel="modulepreload" href="/history-view.js" />
+    <link rel="modulepreload" href="/speed-meter.js" />
+    <link rel="modulepreload" href="/virtual-rider.js" />
+    <link rel="modulepreload" href="/trail.js" />
+    <link rel="modulepreload" href="/ride-storage.js" />
+    <link rel="modulepreload" href="/wake-lock.js" />
     <style>
       html, body { height: 100%; }
       body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color: #111827; display: flex; flex-direction: column; min-height: 100%; }
@@ -243,7 +257,7 @@
         </div>
       </form>
     </dialog>
-    <script src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_MAPS_API_KEY__&libraries=geometry,marker" defer></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_MAPS_API_KEY__&loading=async" defer></script>
     <script src="/app.js" type="module"></script>
   </body>
   </html>

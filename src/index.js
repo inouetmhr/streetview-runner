@@ -40,6 +40,9 @@ function injectWithRewriter(res, env) {
   const key = env.GOOGLE_MAPS_API_KEY || "";
   const nonce = randomToken(16);
   const out = new HTMLRewriter()
+    .on('link[rel="modulepreload"]', {
+      element(el) { el.setAttribute("nonce", nonce); },
+    })
     .on("script", {
       element(el) {
         el.setAttribute("nonce", nonce);
