@@ -28,19 +28,19 @@ function getLocaleFirstDayIndex() {
  */
 export function createHistoryView({ getUser, center, onOpenChange }) {
   const historyUI = {
-    toggle: qs('historyToggle'),
-    body: qs('historyBody'),
-    modeDay: qs('historyModeDay'),
-    modeWeek: qs('historyModeWeek'),
-    modeMonth: qs('historyModeMonth'),
-    prevBtn: qs('historyPrev'),
-    nextBtn: qs('historyNext'),
-    inputDay: qs('historyDay'),
-    inputWeek: qs('historyWeek'),
-    inputMonth: qs('historyMonth'),
-    range: qs('historyRange'),
-    distance: qs('historyDistance'),
-    status: qs('historyStatus'),
+    toggle: qs("historyToggle"),
+    body: qs("historyBody"),
+    modeDay: qs("historyModeDay"),
+    modeWeek: qs("historyModeWeek"),
+    modeMonth: qs("historyModeMonth"),
+    prevBtn: qs("historyPrev"),
+    nextBtn: qs("historyNext"),
+    inputDay: qs("historyDay"),
+    inputWeek: qs("historyWeek"),
+    inputMonth: qs("historyMonth"),
+    range: qs("historyRange"),
+    distance: qs("historyDistance"),
+    status: qs("historyStatus"),
   };
   const firstDayIndex = getLocaleFirstDayIndex();
   let historyMode = "day";
@@ -49,7 +49,7 @@ export function createHistoryView({ getUser, center, onOpenChange }) {
 
   function ensureHistoryMap() {
     if (historyMap || !window.google || !google.maps) return;
-    historyMap = new google.maps.Map(qs('historyMap'), {
+    historyMap = new google.maps.Map(qs("historyMap"), {
       center: { lat: center.lat, lng: center.lng },
       zoom: 14,
       clickableIcons: false,
@@ -193,7 +193,7 @@ export function createHistoryView({ getUser, center, onOpenChange }) {
   }
 
   const setMode = (mode) => { historyMode = mode; updateHistoryModeButtons(); refresh(); };
-  historyUI.toggle?.addEventListener('click', () => setHistoryOpen(!isBodyOpen()));
+  historyUI.toggle?.addEventListener("click", () => setHistoryOpen(!isBodyOpen()));
   historyUI.modeDay?.addEventListener("click", () => setMode("day"));
   historyUI.modeWeek?.addEventListener("click", () => setMode("week"));
   historyUI.modeMonth?.addEventListener("click", () => setMode("month"));

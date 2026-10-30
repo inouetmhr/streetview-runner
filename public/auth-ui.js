@@ -14,10 +14,10 @@ import { qs } from "./dom.js";
 // Generate friendly display names like "Blue Dragon"
 export function generateFriendlyName() {
   const left = [
-    'Blue','Crimson','Golden','Silver','Emerald','Sapphire','Ruby','Azure','Scarlet','Ivory','Onyx','Amber','Cobalt','Violet','Indigo','Coral','Teal','Misty','Sunny','Silent','Brave','Swift','Lunar','Solar','Neon','Frosty','Wild'
+    "Blue","Crimson","Golden","Silver","Emerald","Sapphire","Ruby","Azure","Scarlet","Ivory","Onyx","Amber","Cobalt","Violet","Indigo","Coral","Teal","Misty","Sunny","Silent","Brave","Swift","Lunar","Solar","Neon","Frosty","Wild"
   ];
   const right = [
-    'Dragon','Tiger','Falcon','Wolf','Eagle','Lion','Leopard','Shark','Panther','Phoenix','Bear','Dolphin','Fox','Hawk','Otter','Orca','Raven','Puma','Cobra','Lynx','Viper','Kite','Stallion','Mustang'
+    "Dragon","Tiger","Falcon","Wolf","Eagle","Lion","Leopard","Shark","Panther","Phoenix","Bear","Dolphin","Fox","Hawk","Otter","Orca","Raven","Puma","Cobra","Lynx","Viper","Kite","Stallion","Mustang"
   ];
   const a = left[Math.floor(Math.random() * left.length)];
   const b = right[Math.floor(Math.random() * right.length)];
@@ -32,8 +32,8 @@ export function generateFriendlyName() {
  * Returns { getUser, refreshPasskeys }.
  */
 export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToastVisible }) {
-  const uiUser = { name: qs('userName'), btnEdit: qs('btnEditName'), btnReg: qs('btnRegister'), btnLogin: qs('btnLogin'), btnAddPasskey: qs('btnAddPasskey'), btnLogout: qs('btnLogout'), hint: qs('authHint'), passkeyList: qs('passkeyList') };
-  const authToast = { btnLogin: qs('toastLogin'), btnRegister: qs('toastRegister'), btnClose: qs('toastClose') };
+  const uiUser = { name: qs("userName"), btnEdit: qs("btnEditName"), btnReg: qs("btnRegister"), btnLogin: qs("btnLogin"), btnAddPasskey: qs("btnAddPasskey"), btnLogout: qs("btnLogout"), hint: qs("authHint"), passkeyList: qs("passkeyList") };
+  const authToast = { btnLogin: qs("toastLogin"), btnRegister: qs("toastRegister"), btnClose: qs("toastClose") };
   let sessionUser = initialUser;
   let passkeyItems = [];
   let passkeyCurrentId = null;
@@ -47,55 +47,55 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
   const renderPasskeys = () => {
     if (!uiUser.passkeyList) return;
     if (!sessionUser) {
-      uiUser.passkeyList.textContent = '—';
+      uiUser.passkeyList.textContent = "—";
       return;
     }
     if (!passkeyItems.length) {
-      uiUser.passkeyList.textContent = 'none';
+      uiUser.passkeyList.textContent = "none";
       return;
     }
-    uiUser.passkeyList.innerHTML = '';
+    uiUser.passkeyList.innerHTML = "";
     passkeyItems.forEach((item, index) => {
-      const row = document.createElement('div');
-      row.className = 'passkey-row';
+      const row = document.createElement("div");
+      row.className = "passkey-row";
       const currentLabel = item.label ? item.label : `Passkey ${index + 1}`;
-      const left = document.createElement('div');
-      left.className = 'passkey-name';
-      const actions = document.createElement('div');
-      actions.className = 'passkey-actions';
-      const btnRename = document.createElement('button');
-      btnRename.className = 'ghost small btn-edit';
-      btnRename.textContent = 'Edit';
-      btnRename.title = 'Edit passkey label';
-      btnRename.setAttribute('aria-label', 'Rename passkey');
-      btnRename.addEventListener('click', async () => {
-        const next = prompt('Rename passkey:', currentLabel);
+      const left = document.createElement("div");
+      left.className = "passkey-name";
+      const actions = document.createElement("div");
+      actions.className = "passkey-actions";
+      const btnRename = document.createElement("button");
+      btnRename.className = "ghost small btn-edit";
+      btnRename.textContent = "Edit";
+      btnRename.title = "Edit passkey label";
+      btnRename.setAttribute("aria-label", "Rename passkey");
+      btnRename.addEventListener("click", async () => {
+        const next = prompt("Rename passkey:", currentLabel);
         if (next === null) return;
-        const trimmed = (next || '').trim();
+        const trimmed = (next || "").trim();
         if (!trimmed) return;
         const res = await renamePasskey(item.id, trimmed);
         if (!res.ok) {
-          alert(res.error?.error || 'Failed to rename passkey.');
+          alert(res.error?.error || "Failed to rename passkey.");
           return;
         }
         applyPasskeyResult(res);
       });
-      const label = document.createElement('span');
+      const label = document.createElement("span");
       label.textContent = currentLabel;
-      const btnRemove = document.createElement('button');
-      btnRemove.className = 'ghost small icon';
-      btnRemove.textContent = '🗑';
-      btnRemove.title = 'Remove passkey';
-      btnRemove.setAttribute('aria-label', 'Remove passkey');
-      btnRemove.addEventListener('click', async () => {
+      const btnRemove = document.createElement("button");
+      btnRemove.className = "ghost small icon";
+      btnRemove.textContent = "🗑";
+      btnRemove.title = "Remove passkey";
+      btnRemove.setAttribute("aria-label", "Remove passkey");
+      btnRemove.addEventListener("click", async () => {
         const isCurrent = item.id && passkeyCurrentId && item.id === passkeyCurrentId;
         const message = isCurrent
-          ? 'WARN: This is the passkey CURRENTLY USED. Remove anyway?'
-          : 'Remove this passkey?';
+          ? "WARN: This is the passkey CURRENTLY USED. Remove anyway?"
+          : "Remove this passkey?";
         if (!confirm(message)) return;
         const res = await deletePasskey(item.id);
         if (!res.ok) {
-          alert(res.error?.error || 'Failed to remove passkey.');
+          alert(res.error?.error || "Failed to remove passkey.");
           return;
         }
         applyPasskeyResult(res);
@@ -118,9 +118,9 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
   };
 
   const updateUserUI = () => {
-    const show = (el, visible) => { if (el) el.style.display = visible ? '' : 'none'; };
+    const show = (el, visible) => { if (el) el.style.display = visible ? "" : "none"; };
     const loggedIn = !!sessionUser;
-    uiUser.name.textContent = loggedIn ? (sessionUser.username || 'Runner') : '—';
+    uiUser.name.textContent = loggedIn ? (sessionUser.username || "Runner") : "—";
     show(uiUser.btnReg, !loggedIn);
     show(uiUser.btnLogin, !loggedIn);
     show(uiUser.hint, !loggedIn);
@@ -141,9 +141,9 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
   const doRegister = async () => {
     const wasAnonymous = !sessionUser;
     const suggested = generateFriendlyName();
-    const input = prompt('Choose your display name:', suggested);
+    const input = prompt("Choose your display name:", suggested);
     if (input === null) return; // user canceled
-    const username = (input || '').trim() || suggested;
+    const username = (input || "").trim() || suggested;
     const user = await registerWithPasskey(username);
     if (user) await completeLogin(user, wasAnonymous);
   };
@@ -158,36 +158,36 @@ export function createAuthUI({ initialUser, onLogin, onBeforeLogout, setAuthToas
       sessionUser = user;
       updateUserUI();
       await refreshPasskeys();
-      alert('Passkey added to your account.');
+      alert("Passkey added to your account.");
     }
   };
   const doLogout = async () => {
     onBeforeLogout();
     await logoutSession();
-    try { document.body.classList.remove('side-open'); } catch {}
+    try { document.body.classList.remove("side-open"); } catch {}
     // Reload to reset app state and enforce unauthenticated flows
     location.reload();
   };
   const doEditName = async () => {
     if (!sessionUser) return;
     const suggested = sessionUser.username || generateFriendlyName();
-    const next = prompt('Edit display name:', suggested);
+    const next = prompt("Edit display name:", suggested);
     if (next === null) return;
-    const name = (next || '').trim();
+    const name = (next || "").trim();
     if (!name) return;
     const updated = await updateUsername(name);
     if (updated) { sessionUser = updated; updateUserUI(); }
   };
 
-  uiUser.btnReg?.addEventListener('click', doRegister);
-  uiUser.btnLogin?.addEventListener('click', doLogin);
-  uiUser.btnAddPasskey?.addEventListener('click', doAddPasskey);
-  uiUser.btnLogout?.addEventListener('click', doLogout);
-  uiUser.btnEdit?.addEventListener('click', doEditName);
+  uiUser.btnReg?.addEventListener("click", doRegister);
+  uiUser.btnLogin?.addEventListener("click", doLogin);
+  uiUser.btnAddPasskey?.addEventListener("click", doAddPasskey);
+  uiUser.btnLogout?.addEventListener("click", doLogout);
+  uiUser.btnEdit?.addEventListener("click", doEditName);
   // Toast actions mirror side-pane buttons
-  authToast.btnRegister?.addEventListener('click', doRegister);
-  authToast.btnLogin?.addEventListener('click', doLogin);
-  authToast.btnClose?.addEventListener('click', () => { setAuthToastVisible(false); });
+  authToast.btnRegister?.addEventListener("click", doRegister);
+  authToast.btnLogin?.addEventListener("click", doLogin);
+  authToast.btnClose?.addEventListener("click", () => { setAuthToastVisible(false); });
 
   updateUserUI();
 

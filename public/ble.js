@@ -25,11 +25,11 @@ export class BLEWalker {
       optionalServices: [0x1826],
     };
     this.device = await navigator.bluetooth.requestDevice(options);
-    this.device.addEventListener('gattserverdisconnected', () => this._onDisconnected());
+    this.device.addEventListener("gattserverdisconnected", () => this._onDisconnected());
     this.server = await this.device.gatt.connect();
     // Only FTMS is supported
     if (await this._tryFTMS()) return;
-    this._status('Connected (no FTMS service)');
+    this._status("Connected (no FTMS service)");
     try { this.onConnectionChange?.(false); } catch {}
   }
   async disconnect() {
@@ -40,25 +40,25 @@ export class BLEWalker {
     this._activeService = null;
     this.device = null;
     this.server = null;
-    this._status('Disconnected');
+    this._status("Disconnected");
     try { this.onConnectionChange?.(false); } catch {}
   }
   _status(s) {
-    document.getElementById('status').textContent = s;
+    document.getElementById("status").textContent = s;
   }
   async _tryFTMS() {
     try {
       const svc = await this.server.getPrimaryService(0x1826);
       const indoorBikeDataUUID = 0x2ad2; // Indoor Bike Data
       const ch = await svc.getCharacteristic(indoorBikeDataUUID);
-      ch.addEventListener('characteristicvaluechanged', (e) => {
+      ch.addEventListener("characteristicvaluechanged", (e) => {
         const dv = e.target.value;
         this._onFTMS(dv);
         try { this.onData?.(); } catch {}
       });
       await ch.startNotifications();
-      this._activeService = 'FTMS';
-      this._status('Connected (FTMS: Indoor Bike)');
+      this._activeService = "FTMS";
+      this._status("Connected (FTMS: Indoor Bike)");
       try { this.onConnectionChange?.(true); } catch {}
       return true;
     } catch { return false; }
