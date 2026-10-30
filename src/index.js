@@ -461,12 +461,7 @@ async function handleApi(request, env, url) {
       if (!location || !isFinite(location.lat) || !isFinite(location.lng)) {
         return json({ error: "numeric lat,lng required" }, 400);
       }
-      const status = {
-        lat: Number(location.lat),
-        lng: Number(location.lng),
-        heading: isFinite(location.heading) ? Number(location.heading) : 0,
-        ts: Date.now(),
-      };
+      // No persistence: status derives from the latest history point.
       return json({ ok: true });
     }
     return json({ error: "method not allowed" }, 405, { Allow: "GET, POST" });

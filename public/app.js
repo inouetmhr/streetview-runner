@@ -68,11 +68,11 @@ class BLEWalker {
   }
   _onFTMS(dv) {
     const data = this._parseIndoorBikeData(dv);
-    if (data.instantaneous_cadence) {
+    if (data.instantaneous_cadence != null) {
       this.sensors.cadenceRpm = Math.round(data.instantaneous_cadence);
     }
-    if (data.instantaneous_speed) {
-      this.sensors.speedKmh = data.instantaneous_speed
+    if (data.instantaneous_speed != null) {
+      this.sensors.speedKmh = data.instantaneous_speed;
     }
     if (data.total_distance != null) {
       this.sensors.distanceM = data.total_distance;
@@ -161,15 +161,6 @@ async function fetchStatus() {
       day: data.day || null,
     } : null;
   } catch { return null; }
-}
-
-async function saveStatus(location) {
-  try {
-    await fetch(`/api/status`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ location })
-    });
-  } catch {}
 }
 
 async function appendHistory(point) {
@@ -741,15 +732,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   [map, pano] = initMap(last || defaultLocation) || [];
   if (!map || !pano) return;
 
-  const glyphImg = document.createElement("img");
-  glyphImg.src = "/circle_dot.png";
-
   const session = {
     dailyDistanceM: 0,
     distance_togo: 0,
     prevPosition: null,
-    lastHistoryPoint: null,
-    lastStatusSaved: null,
     lastHistorySaved: null,
     turnBlocked: false,
     ignoreNextHistorySave: false,
@@ -852,20 +838,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
     if (!points.length) return;
 
-    const MAX_SEGMENT_M = 500;
-    const segments = [];
-    let current = [points[0]];
-    for (let i = 1; i < points.length; i++) {
-      if (distMeters(points[i - 1], points[i]) <= MAX_SEGMENT_M) {
-        current.push(points[i]);
-      } else {
-        if (current.length >= 2) segments.push(current);
-        current = [points[i]];
-      }
-    }
-    if (current.length >= 2) segments.push(current);
-
-    for (const path of segments) {
+    for (const path of splitSegments(points)) {
       historyPolylines.push(new google.maps.Polyline({
         path,
         strokeColor: "#2563eb",
@@ -1020,7 +993,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   function setConnectedUI(isConnected) {
     ui.connectBtn.style.display = isConnected ? 'none' : '';
-    if (ui.disconnectBtn) ui.disconnectBtn.style.display = isConnected ? '' : 'none';
   }
 
   const MAX_BACKLOG_M = 200; // cap backlog in meters to avoid runaway
@@ -1042,8 +1014,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     walker.sensors.prevDistance = total;
     if (Number.isFinite(delta) && delta > 0) {
       onSensorDistanceDelta(delta * 0.9); // scale by 0.9 because sensor is too fast.
-      renderMetrics(walker.sensors, walker);
     }
+    renderMetrics(walker.sensors, walker);
   };
   const virtual = {
     autoEnabled: false,
@@ -1378,23 +1350,15 @@ window.addEventListener("DOMContentLoaded", async () => {
     clearTimeout(session.decayTimerId);
     session.decayTimerId = setTimeout(scheduleSpeedDecay, 5000);
 
-    putMarker(session.prevPosition);
+    if (session.prevPosition) extendTrail(session.prevPosition, currentPos);
     session.prevPosition = currentPos;
-    // Persist status and history at different intervals (no time fallback)
-    const STATUS_SAVE_DISTANCE_M = 100;
+    // Persist history every HISTORY_SAVE_DISTANCE_M (status derives from history server-side)
     const HISTORY_SAVE_DISTANCE_M = 100;
     if (sessionUser) {
       if (session.ignoreNextHistorySave) {
-        session.lastStatusSaved = { ...currentPos };
         session.lastHistorySaved = { ...currentPos };
         session.ignoreNextHistorySave = false;
       } else {
-        const statusChanged = !session.lastStatusSaved
-          || distMeters(session.lastStatusSaved, currentPos) >= STATUS_SAVE_DISTANCE_M;
-        if (statusChanged) {
-          session.lastStatusSaved = { ...currentPos };
-          saveStatus({ ...currentPos, heading });
-        }
         const historyChanged = !session.lastHistorySaved
           || distMeters(session.lastHistorySaved, currentPos) >= HISTORY_SAVE_DISTANCE_M;
         if (historyChanged) {
@@ -1462,7 +1426,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   applyServerDailyDistance(initialStart.statusResp, initialStart.resolved.preferLocal);
   ui.hdrDayKm.textContent = (session.dailyDistanceM/1000).toFixed(2);
 
-  // Load today's history and draw markers on mini map (no distance calc)
+  // Load today's history and draw it as a trail on mini map (no distance calc)
   async function loadHistoryAndMarkers() {
     const todayStr = session.dayStr;
     try {
@@ -1470,18 +1434,13 @@ window.addEventListener("DOMContentLoaded", async () => {
       if (!res.ok) return;
       const data = await res.json();
       const items = Array.isArray(data.items) ? data.items : [];
-      // Draw markers only
-      for (let i = 0; i < items.length; i++) {
-        const p = items[i];
-        if (p && Number.isFinite(p.lat) && Number.isFinite(p.lng)) {
-          putMarker({ lat: p.lat, lng: p.lng });
-        }
-      }
+      const points = items
+        .filter((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng))
+        .map((p) => ({ lat: p.lat, lng: p.lng }));
+      resetTrail(points);
       // Set prev position to last point for subsequent movement tracking
-      const last = items[items.length - 1];
-      if (last && Number.isFinite(last.lat) && Number.isFinite(last.lng)) {
-        session.prevPosition = { lat: last.lat, lng: last.lng };
-      }
+      const last = points[points.length - 1];
+      if (last) session.prevPosition = last;
     } catch {}
   }
   if (sessionUser) await loadHistoryAndMarkers();
@@ -1522,24 +1481,57 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (historyUI.inputMonth) historyUI.inputMonth.value = session.dayStr.slice(0, 7);
   updateHistoryModeButtons();
 
-  function putMarker(location) {
-      try {
-          if (google.maps.marker && google.maps.marker.AdvancedMarkerElement) {
-            new google.maps.marker.AdvancedMarkerElement({
-              position: location,
-              map: map,
-              content: glyphImg.cloneNode(true)
-            });
-          } else {
-            new google.maps.Marker({ position: location, map });
-          }
-      }
-      catch  (error) {
-          console.error("Error in putting marker:", error);
-          //throw error;
-      }
+  // Mini map trail: a few polylines instead of one marker per step,
+  // so long rides keep a bounded number of map objects.
+  let trailPolylines = [];
+  function newTrailPolyline(path) {
+    const pl = new google.maps.Polyline({
+      path,
+      strokeColor: "#2563eb",
+      strokeOpacity: 0.8,
+      strokeWeight: 4,
+      clickable: false,
+      map,
+    });
+    trailPolylines.push(pl);
+    return pl;
+  }
+  function resetTrail(points) {
+    trailPolylines.forEach((pl) => pl.setMap(null));
+    trailPolylines = [];
+    for (const path of splitSegments(points)) newTrailPolyline(path);
+  }
+  function extendTrail(from, to) {
+    const TRAIL_JOIN_M = 1;
+    const last = trailPolylines[trailPolylines.length - 1];
+    const path = last?.getPath();
+    const tail = path && path.getLength() ? path.getAt(path.getLength() - 1) : null;
+    const tailPos = tail ? { lat: tail.lat(), lng: tail.lng() } : null;
+    if (tailPos && distMeters(tailPos, from) <= TRAIL_JOIN_M && distMeters(from, to) <= MAX_SEGMENT_M) {
+      path.push(new google.maps.LatLng(to.lat, to.lng));
+    } else {
+      newTrailPolyline([from, to]);
+    }
   }
 });
+
+// Split a point list into polylines, breaking at jumps longer than MAX_SEGMENT_M ("warps").
+const MAX_SEGMENT_M = 500;
+function splitSegments(points) {
+  const segments = [];
+  if (!points.length) return segments;
+  let current = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    if (distMeters(points[i - 1], points[i]) <= MAX_SEGMENT_M) {
+      current.push(points[i]);
+    } else {
+      if (current.length >= 2) segments.push(current);
+      current = [points[i]];
+    }
+  }
+  if (current.length >= 2) segments.push(current);
+  return segments;
+}
 
 // Haversine distance
 function distMeters(a, b) {
