@@ -186,7 +186,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         if (inherited) saveLastPosition(user.userId, inherited);
       }
       session.ignoreNextHistorySave = true;
-      await afterLogin();
+      await afterLogin({ justSignedIn: true });
       await historyView.refresh();
     },
   });
@@ -273,6 +273,16 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  // After sign-in: the larger of the server total (every device) and what this device
+  // stored for the user today (the server misses up to the last ~100 m of each ride).
+  function useSignedInDailyDistance(statusResp) {
+    const serverM = statusResp?.day === session.dayStr ? statusResp.dailyDistanceMeters : 0;
+    const localM = loadDailyDistance(currentUserId(), session.dayStr);
+    session.dailyDistanceM = Math.max(Number.isFinite(serverM) ? serverM : 0, localM);
+    saveDailyDistance(currentUserId(), session.dayStr, session.dailyDistanceM);
+    renderDayKm();
+  }
+
   function addDailyDistance(moved) {
     const currentDay = rideDay();
     if (currentDay !== session.dayStr) {
@@ -312,7 +322,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   // After login tasks: refresh status and load today's history trail
-  async function afterLogin() {
+  // justSignedIn: the inherited position is kept, but Today must come from this user's
+  // records, not from the anonymous session that was showing until now.
+  async function afterLogin({ justSignedIn = false } = {}) {
     try {
       const [statusResp, historyData] = await Promise.all([fetchStatus(rideDay()), fetchHistoryDay(session.dayStr)]);
       const nextStart = getStartState(currentUserId(), statusResp);
@@ -330,7 +342,8 @@ window.addEventListener("DOMContentLoaded", async () => {
           session.prevPosition = { lat: next.lat, lng: next.lng };
         } catch {}
       }
-      applyServerDailyDistance(nextStart.statusResp, nextStart.resolved.preferLocal);
+      if (justSignedIn) useSignedInDailyDistance(nextStart.statusResp);
+      else applyServerDailyDistance(nextStart.statusResp, nextStart.resolved.preferLocal);
       applyTodayHistory(historyData);
     } catch {}
   }
@@ -601,7 +614,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (restToGo > 0 && !blocked) advance();
   });
 
-  function saveHistoryIfMoved(currentPos, heading) {
+  function saveHistoryIfMoved(currentPos, heading, ts) {
     if (!auth.getUser()) return;
     if (session.ignoreNextHistorySave) {
       session.lastHistorySaved = { ...currentPos };
@@ -612,7 +625,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       || distMeters(session.lastHistorySaved, currentPos) >= HISTORY_SAVE_DISTANCE_M;
     if (historyChanged) {
       session.lastHistorySaved = { ...currentPos };
-      appendHistory({ ...currentPos, heading, ts: Date.now(), day: session.dayStr });
+      appendHistory({ ...currentPos, heading, ts, day: session.dayStr });
     }
   }
 
@@ -622,7 +635,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (!loc || !loc.latLng) return;
     const currentPos = { lat: loc.latLng.lat(), lng: loc.latLng.lng() };
     const heading = pano.getPov()?.heading || 0;
-    saveLastPosition(currentUserId(), { ...currentPos, heading });
+    // One timestamp for the local position and the history point, so the server never
+    // looks newer than this device for a point this device saved (see resolveLatestPosition).
+    const now = Date.now();
+    saveLastPosition(currentUserId(), { ...currentPos, heading, ts: now });
     // Subtract actual moved distance from backlog
     let moved = 0;
     if (session.prevPosition) {
@@ -643,7 +659,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (session.prevPosition) trail.extend(session.prevPosition, currentPos);
     session.prevPosition = currentPos;
     // Persist history every HISTORY_SAVE_DISTANCE_M (status derives from history server-side)
-    saveHistoryIfMoved(currentPos, heading);
+    saveHistoryIfMoved(currentPos, heading, now);
   });
 
   // BLE controls (no explicit disconnect button per spec; disconnect via OS/BLE UI)

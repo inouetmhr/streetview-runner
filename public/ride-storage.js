@@ -29,13 +29,14 @@ export function saveLastPosition(userId, pos) {
   try { localStorage.setItem(lastPositionKey(userId), JSON.stringify(next)); } catch {}
 }
 
-// Picks whichever of the local and server positions is newer.
+// Picks whichever of the local and server positions is newer. A tie means the server's
+// latest point came from this device, so the local position and daily distance win.
 export function resolveLatestPosition(localPos, serverPos) {
   if (!localPos) return { pos: serverPos || null, preferLocal: false };
   if (!serverPos) return { pos: localPos, preferLocal: true };
   const localTs = Number.isFinite(localPos.ts) ? localPos.ts : 0;
   const serverTs = Number.isFinite(serverPos.ts) ? serverPos.ts : 0;
-  const preferLocal = localTs > serverTs;
+  const preferLocal = localTs >= serverTs;
   return { pos: preferLocal ? localPos : serverPos, preferLocal };
 }
 

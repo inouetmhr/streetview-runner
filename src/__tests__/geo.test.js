@@ -50,6 +50,9 @@ describe("resolveLatestPosition", () => {
     expect(resolveLatestPosition(local, server)).toEqual({ pos: local, preferLocal: true });
     expect(resolveLatestPosition({ ...local, ts: 50 }, server)).toEqual({ pos: server, preferLocal: false });
   });
+  it("keeps the local position when the server's latest point has the same time", () => {
+    expect(resolveLatestPosition(local, { ...server, ts: local.ts })).toEqual({ pos: local, preferLocal: true });
+  });
   it("falls back to whichever exists", () => {
     expect(resolveLatestPosition(null, server)).toEqual({ pos: server, preferLocal: false });
     expect(resolveLatestPosition(local, null)).toEqual({ pos: local, preferLocal: true });

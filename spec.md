@@ -145,6 +145,8 @@ Notes:
 - `dailyDistance:{userId}:{YYYY-MM-DD}` → daily distance meters (string).
 - `lastPosition:{userId}` → `{ lat, lng, heading }` JSON (last known pano position).
 - Startup prefers `lastPosition` over `/api/status` when available.
+- The local position and the history point saved for the same move share one timestamp, and a tie keeps the local position and today's distance, so a device is never overridden by its own last upload. A newer point from another device still wins.
+- After signing in, the current position is kept (inherited from the anonymous session) and Today becomes the larger of the server total and what this device stored for that user today.
 
 ## Security
 - Validate `userId`, `lat`, `lng`, and numeric types server‑side.
