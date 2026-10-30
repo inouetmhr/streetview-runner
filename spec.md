@@ -95,6 +95,7 @@ Notes:
 - Sensor reconnect: after an unexpected BLE disconnect, the same device is retried after 1, 2, 4, 8 and 16 s before reporting "Disconnected".
 - Auth prompt: a small toast is shown near the top center when logged out, prompting Sign up or Sign in; hides on successful auth.
 - If the Maps API fails to load, a notice asks the user to reload instead of leaving a blank page.
+- Installable as a PWA (`public/manifest.webmanifest`, icons in `public/icons/`): opens full screen on phones (`display_override: fullscreen`) and as a standalone window on desktop. There is no service worker: the app needs the network for Street View, and the HTML is rewritten per request (Maps key, CSP nonce), so it is not cached.
 
 ## Data Model / Storage (KV + D1)
 ### User data
