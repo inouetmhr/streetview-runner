@@ -211,6 +211,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     hdrSpeed: qs("hdrSpeed"),
     hdrDayKm: qs("hdrDayKm"),
     connectBtn: qs("connectBtn"),
+    connectTitle: qs("connectTitle"),
     rideControl: qs("rideControl"),
     sensorChip: qs("sensorChip"),
     sensorChipText: qs("sensorChipText"),
@@ -346,7 +347,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   function setRideState(state, text = "") {
     ui.rideControl.dataset.state = state;
     ui.connectBtn.disabled = state === "connecting";
-    ui.connectBtn.textContent = state === "connecting" ? "ᛒ Connecting…" : "ᛒ Connect sensor";
+    ui.connectTitle.textContent = state === "connecting" ? "Connecting…" : "Connect sensor";
     ui.sensorChipText.textContent = text;
     ui.sensorChip.classList.remove("compact");
     clearTimeout(sensorChipTimer);
@@ -400,6 +401,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     deviceStatus.serviceName.textContent = "Auto progress";
     deviceStatus.status.textContent = state.enabled ? "Connected (Auto)" : "Idle (Auto off)";
     if (ui.autoProgressLabel) ui.autoProgressLabel.textContent = `Auto forward: ${state.enabled ? "On" : "Off"}`;
+    ui.rideControl.classList.toggle("auto-on", state.enabled);
     updateHudTitleVisibility(state.enabled ? state.speedKmh : 0);
     updateWakeLock();
   }
