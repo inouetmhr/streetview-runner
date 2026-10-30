@@ -56,30 +56,28 @@
       #appDialog button.danger { background:#b91c1c; border-color:#b91c1c; }
       .inline-edit { font:inherit; padding:.15rem .35rem; width:min(100%, 12rem); }
       #rideControl { position:absolute; left:50%; bottom:calc(28px + env(safe-area-inset-bottom)); transform:translateX(-50%); display:flex; align-items:center; gap:.5rem; z-index:12; }
-      #rideControl .bt-icon { width:1.25em; height:1.25em; fill:currentColor; flex:none; }
-      #rideControl .ride-connect { display:inline-flex; align-items:center; gap:.5rem; height:52px; padding:0 1.1rem 0 .9rem; border-radius:26px; border:none; background:#2563eb; color:#f8fafc; white-space:nowrap; box-shadow:0 8px 18px rgba(37,99,235,.35); }
-      #rideControl .ride-connect .bt-icon { width:1.6rem; height:1.6rem; }
-      #rideControl .ride-connect-text { display:flex; flex-direction:column; align-items:flex-start; line-height:1.15; }
-      #connectTitle { font-weight:700; font-size:1rem; }
-      #rideControl .ride-connect-sub { font-size:.72rem; opacity:.85; }
-      #rideControl .ride-connect:disabled { opacity:.7; cursor:default; }
+      .bt-icon { width:1.25em; height:1.25em; fill:currentColor; flex:none; }
+      /* Connect sensor sits right under the HUD while no sensor is connected. */
+      #connectBtn { position:absolute; left:50%; top:72px; transform:translateX(-50%); z-index:12; display:inline-flex; align-items:center; gap:.35rem; height:36px; padding:0 .9rem 0 .7rem; border-radius:18px; border:none; background:#2563eb; color:#f8fafc; font-size:.85rem; font-weight:700; white-space:nowrap; box-shadow:0 6px 14px rgba(37,99,235,.35); }
+      #connectBtn:disabled { opacity:.75; cursor:default; }
+      #connectBtn[hidden] { display:none; }
       /* Draw attention to Connect until the ride has started some other way. */
-      #rideControl[data-state="idle"]:not(.auto-on) .ride-connect { animation:connect-pulse 2.4s ease-out infinite; }
-      @keyframes connect-pulse { 0% { box-shadow:0 8px 18px rgba(37,99,235,.35), 0 0 0 0 rgba(96,165,250,.7); } 70%, 100% { box-shadow:0 8px 18px rgba(37,99,235,.35), 0 0 0 14px rgba(96,165,250,0); } }
-      @media (prefers-reduced-motion: reduce) { #rideControl .ride-connect { animation:none !important; } }
+      body[data-ride="idle"]:not(.auto-on) #connectBtn { animation:connect-pulse 2.4s ease-out infinite; }
+      @keyframes connect-pulse { 0% { box-shadow:0 6px 14px rgba(37,99,235,.35), 0 0 0 0 rgba(96,165,250,.7); } 70%, 100% { box-shadow:0 6px 14px rgba(37,99,235,.35), 0 0 0 12px rgba(96,165,250,0); } }
+      @media (prefers-reduced-motion: reduce) { #connectBtn { animation:none !important; } }
       #rideControl .sensor-chip { display:none; align-items:center; gap:.4rem; height:36px; padding:0 .9rem; border-radius:18px; border:none; background:rgba(17,24,39,.72); color:#f8fafc; font-size:.85rem; white-space:nowrap; box-shadow:0 6px 16px rgba(0,0,0,.2); transition:opacity .3s ease; }
       #rideControl .sensor-chip .bt-icon { color:#60a5fa; }
       #rideControl .sensor-chip.compact { width:32px; height:32px; padding:0; justify-content:center; opacity:.55; }
       #rideControl .sensor-chip.compact #sensorChipText { display:none; }
-      #rideControl[data-state="connected"] .sensor-chip, #rideControl[data-state="reconnecting"] .sensor-chip { display:inline-flex; }
-      #rideControl[data-state="reconnecting"] .sensor-chip { background:#b45309; }
-      #rideControl[data-state="reconnecting"] .sensor-chip .bt-icon { color:#fde68a; animation:blink 1s steps(2, start) infinite; }
-      #rideControl[data-state="connected"] .ride-connect, #rideControl[data-state="reconnecting"] .ride-connect { display:none; }
-      #rideControl[data-state="connected"] #tapZone, #rideControl[data-state="reconnecting"] #tapZone { display:none; }
+      body[data-ride="connected"] .sensor-chip, body[data-ride="reconnecting"] .sensor-chip { display:inline-flex; }
+      body[data-ride="reconnecting"] .sensor-chip { background:#b45309; }
+      body[data-ride="reconnecting"] .sensor-chip .bt-icon { color:#fde68a; animation:blink 1s steps(2, start) infinite; }
+      body[data-ride="connected"] #connectBtn, body[data-ride="reconnecting"] #connectBtn { display:none; }
+      body[data-ride="connected"] #tapZone, body[data-ride="reconnecting"] #tapZone { display:none; }
       @keyframes blink { to { visibility:hidden; } }
       #sideBackdrop { display:none; }
       #tapZone { white-space:nowrap; height:40px; box-sizing:border-box; padding:0 .9rem; background:rgba(17,24,39,.7); color:white; border-radius: 20px; display:flex; flex-direction: column; align-items:center; justify-content:center; gap:.1rem; font-size:.8rem; letter-spacing:.02em; z-index: 12; box-shadow: 0 8px 20px rgba(0,0,0,.2); user-select:none; touch-action: manipulation; }
-      #authToast { position: fixed; left: 50%; top: 72px; transform: translateX(-50%); background:#f8fafc; color:#0f172a; padding: .75rem 1rem; border-radius: .5rem; display:none; z-index: 60; box-shadow: 0 8px 18px rgba(37,99,235,.16); border: none; text-align: center; }
+      #authToast { position: fixed; left: 50%; top: 120px; transform: translateX(-50%); background:#f8fafc; color:#0f172a; padding: .75rem 1rem; border-radius: .5rem; display:none; z-index: 60; box-shadow: 0 8px 18px rgba(37,99,235,.16); border: none; text-align: center; }
       #authToast .actions { display:inline-flex; gap:.5rem; margin-left: 0; margin-top: .3rem; justify-content: center; }
       #authToast button.ghost { background: #eff6ff; color: #1e3a8a; border-color: #93c5fd; }
       #authToast button.ghost:hover { background: #dbeafe; }
@@ -128,7 +126,7 @@
       body.history-open #miniMap { display: none; }
       body.history-open #turnToast { display: none; }
       body.history-open #historyMap { display: block; }
-      body.history-open #rideControl { display: none; }
+      body.history-open #rideControl, body.history-open #connectBtn { display: none; }
       body.history-open #hudBar { display: none; }
       body.history-open #authToast, body.side-open #authToast { display: none; }
       /* Wide screen: show side when opened */
@@ -159,7 +157,7 @@
       }
     </style>
   </head>
-  <body>
+  <body data-ride="idle">
     <main>
       <div id="panoWrap">
         <div id="pano"></div>
@@ -183,6 +181,11 @@
             </div>
           </div>
         </div>
+        <!-- Shown under the HUD until a sensor connects. Bluetooth icon: Material Icons "bluetooth" (Apache License 2.0) -->
+        <button id="connectBtn">
+          <svg class="bt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.71 7.71 12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
+          <span id="connectTitle">Connect sensor</span>
+        </button>
         <div id="turnToast" role="status" aria-live="polite">
           <div class="turn-title">Turn!</div>
           <div id="turnChoices" class="turn-choices"></div>
@@ -190,12 +193,7 @@
         </div>
         <!-- How the ride moves: connect a sensor or use Auto forward. While a sensor is
              connected this shrinks to a small icon so it stays out of the view. -->
-        <div id="rideControl" data-state="idle">
-          <!-- Bluetooth icon: Material Icons "bluetooth" (Apache License 2.0) -->
-          <button id="connectBtn" class="ride-connect">
-            <svg class="bt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.71 7.71 12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
-            <span class="ride-connect-text"><span id="connectTitle">Connect sensor</span><span class="ride-connect-sub">Tap to start riding</span></span>
-          </button>
+        <div id="rideControl">
           <button id="sensorChip" class="sensor-chip" aria-live="polite" title="Sensor status"><svg class="bt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.71 7.71 12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg><span id="sensorChipText"></span></button>
           <div id="tapZone" role="button" aria-label="Toggle auto progress" tabindex="0">
             <span id="autoProgressLabel">Auto forward: Off</span>

@@ -212,7 +212,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     hdrDayKm: qs("hdrDayKm"),
     connectBtn: qs("connectBtn"),
     connectTitle: qs("connectTitle"),
-    rideControl: qs("rideControl"),
     sensorChip: qs("sensorChip"),
     sensorChipText: qs("sensorChipText"),
     togglePane: qs("togglePane"),
@@ -340,12 +339,13 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  // Bottom ride control: "idle" shows Connect + Auto forward, "connecting" disables
-  // Connect, "connected" shows the sensor name and then shrinks to a small icon so it
-  // stays out of the view, "reconnecting" stays expanded and highlighted.
+  // Ride state (body[data-ride]): "idle" shows Connect under the HUD and Auto forward at
+  // the bottom, "connecting" disables Connect, "connected" shows the sensor name at the
+  // bottom and then shrinks to a small icon so it stays out of the view, "reconnecting"
+  // keeps that chip expanded and highlighted.
   let sensorChipTimer = 0;
   function setRideState(state, text = "") {
-    ui.rideControl.dataset.state = state;
+    document.body.dataset.ride = state;
     ui.connectBtn.disabled = state === "connecting";
     ui.connectTitle.textContent = state === "connecting" ? "Connecting…" : "Connect sensor";
     ui.sensorChipText.textContent = text;
@@ -365,7 +365,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     updateWakeLock();
   };
   walker.onStatus = (text) => {
-    if (ui.rideControl.dataset.state === "reconnecting") ui.sensorChipText.textContent = text;
+    if (document.body.dataset.ride === "reconnecting") ui.sensorChipText.textContent = text;
   };
   walker.onReconnect = (state) => {
     if (state === "reconnecting") {
@@ -379,7 +379,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   };
   // Tapping the icon shows the sensor name again for a moment.
   ui.sensorChip.addEventListener("click", () => {
-    if (ui.rideControl.dataset.state === "connected") setRideState("connected", connectedText());
+    if (document.body.dataset.ride === "connected") setRideState("connected", connectedText());
   });
   if (!navigator.bluetooth) ui.connectBtn.hidden = true; // Firefox, iOS: Auto forward only
   walker.onData = () => {
@@ -401,7 +401,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     deviceStatus.serviceName.textContent = "Auto progress";
     deviceStatus.status.textContent = state.enabled ? "Connected (Auto)" : "Idle (Auto off)";
     if (ui.autoProgressLabel) ui.autoProgressLabel.textContent = `Auto forward: ${state.enabled ? "On" : "Off"}`;
-    ui.rideControl.classList.toggle("auto-on", state.enabled);
+    document.body.classList.toggle("auto-on", state.enabled);
     updateHudTitleVisibility(state.enabled ? state.speedKmh : 0);
     updateWakeLock();
   }
