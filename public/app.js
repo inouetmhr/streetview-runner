@@ -35,7 +35,7 @@ const HISTORY_SAVE_DISTANCE_M = 100;
 const SPEED_DECAY_DELAY_MS = 5000; // start (and repeat) decaying this long after the last movement
 const VISIBILITY_SYNC_MS = 60 * 1000;
 const UNSUPPORTED_BLE_MESSAGE = "Web Bluetooth isn’t supported on Firefox or iOS.";
-const SENSOR_CHIP_COLLAPSE_MS = 3000; // show the sensor name briefly, then shrink to an icon
+const SENSOR_CHIP_HIDE_MS = 3000; // show the sensor name briefly after connecting, then hide it
 
 // The Maps loader runs with loading=async, so classes are available only after importLibrary.
 async function loadMapsLibraries() {
@@ -341,19 +341,20 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Ride state (body[data-ride]): "idle" shows Connect under the HUD and Auto forward at
   // the bottom, "connecting" disables Connect, "connected" shows the sensor name at the
-  // bottom and then shrinks to a small icon so it stays out of the view, "reconnecting"
-  // keeps that chip expanded and highlighted.
+  // bottom and then hides it so nothing covers the view, "reconnecting" shows the chip
+  // highlighted until the sensor is back or given up.
   let sensorChipTimer = 0;
   function setRideState(state, text = "") {
     document.body.dataset.ride = state;
     ui.connectBtn.disabled = state === "connecting";
     ui.connectTitle.textContent = state === "connecting" ? "Connecting…" : "Connect sensor";
     ui.sensorChipText.textContent = text;
-    ui.sensorChip.classList.remove("compact");
+    ui.sensorChip.classList.remove("gone");
     clearTimeout(sensorChipTimer);
     if (state === "connected") {
-      sensorChipTimer = setTimeout(() => ui.sensorChip.classList.add("compact"), SENSOR_CHIP_COLLAPSE_MS);
+      sensorChipTimer = setTimeout(() => ui.sensorChip.classList.add("gone"), SENSOR_CHIP_HIDE_MS);
     }
+    console.log(`ride state: ${state}`);
   }
   const connectedText = () => `${walker.device?.name || "Sensor"} · Connected`;
 
@@ -377,10 +378,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       notify("Sensor connection lost. Tap Connect sensor to try again.", { kind: "error" });
     }
   };
-  // Tapping the icon shows the sensor name again for a moment.
-  ui.sensorChip.addEventListener("click", () => {
-    if (document.body.dataset.ride === "connected") setRideState("connected", connectedText());
-  });
   if (!navigator.bluetooth) ui.connectBtn.hidden = true; // Firefox, iOS: Auto forward only
   walker.onData = () => {
     const total = walker.sensors.distanceM || 0;

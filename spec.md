@@ -78,7 +78,7 @@ Notes:
   - Menu icon sits at the top-left of the Street View (it moves with the view when the pane opens beside it) and toggles the side pane; it shows × while the pane is open.
   - How the ride moves:
     - Not connected: a compact "Connect sensor" button right under the HUD (gently pulsing until a ride starts; hidden where Web Bluetooth is unavailable), and the Auto forward Tap Zone near the bottom center (tap, Space or Enter toggles it).
-    - Connected (bottom center): a chip shows the sensor name for 3 s, then shrinks to a small translucent Bluetooth icon so it stays out of the view; tapping it shows the name again.
+    - Connected (bottom center): a chip shows the sensor name for 3 s and then hides, so nothing covers the view while riding.
     - Reconnecting: the chip stays expanded and highlighted with the attempt count; after the last attempt it returns to "Connect sensor".
 - Side Pane: following elements are show in a pane that is collapsible and hidden in default (slides in from the left).
   - Wide screens: the pane sits beside the Street View. Narrow screens (≤900px): it overlays the view; tapping outside it or Esc closes it.

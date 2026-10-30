@@ -65,11 +65,11 @@
       body[data-ride="idle"]:not(.auto-on) #connectBtn { animation:connect-pulse 2.4s ease-out infinite; }
       @keyframes connect-pulse { 0% { box-shadow:0 6px 14px rgba(37,99,235,.35), 0 0 0 0 rgba(96,165,250,.7); } 70%, 100% { box-shadow:0 6px 14px rgba(37,99,235,.35), 0 0 0 12px rgba(96,165,250,0); } }
       @media (prefers-reduced-motion: reduce) { #connectBtn { animation:none !important; } }
-      #rideControl .sensor-chip { display:none; align-items:center; gap:.4rem; height:36px; padding:0 .9rem; border-radius:18px; border:none; background:rgba(17,24,39,.72); color:#f8fafc; font-size:.85rem; white-space:nowrap; box-shadow:0 6px 16px rgba(0,0,0,.2); transition:opacity .3s ease; }
-      #rideControl .sensor-chip .bt-icon { color:#60a5fa; }
-      #rideControl .sensor-chip.compact { width:32px; height:32px; padding:0; justify-content:center; opacity:.55; }
-      #rideControl .sensor-chip.compact #sensorChipText { display:none; }
+      .sensor-chip { display:none; align-items:center; gap:.4rem; height:36px; padding:0 .9rem; border-radius:18px; border:none; background:rgba(17,24,39,.72); color:#f8fafc; font-size:.85rem; white-space:nowrap; box-shadow:0 6px 16px rgba(0,0,0,.2); transition:opacity .3s ease; }
+      .sensor-chip .bt-icon { color:#60a5fa; }
+
       body[data-ride="connected"] .sensor-chip, body[data-ride="reconnecting"] .sensor-chip { display:inline-flex; }
+      body[data-ride] .sensor-chip.gone { display:none; }
       body[data-ride="reconnecting"] .sensor-chip { background:#b45309; }
       body[data-ride="reconnecting"] .sensor-chip .bt-icon { color:#fde68a; animation:blink 1s steps(2, start) infinite; }
       body[data-ride="connected"] #connectBtn, body[data-ride="reconnecting"] #connectBtn { display:none; }
@@ -194,7 +194,7 @@
         <!-- How the ride moves: connect a sensor or use Auto forward. While a sensor is
              connected this shrinks to a small icon so it stays out of the view. -->
         <div id="rideControl">
-          <button id="sensorChip" class="sensor-chip" aria-live="polite" title="Sensor status"><svg class="bt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.71 7.71 12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg><span id="sensorChipText"></span></button>
+          <div id="sensorChip" class="sensor-chip" role="status" aria-live="polite"><svg class="bt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.71 7.71 12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg><span id="sensorChipText"></span></div>
           <div id="tapZone" role="button" aria-label="Toggle auto progress" tabindex="0">
             <span id="autoProgressLabel">Auto forward: Off</span>
           </div>
