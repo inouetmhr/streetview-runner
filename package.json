@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "wrangler dev",
     "preview": "wrangler dev --remote",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "TZ=Asia/Tokyo vitest run"
   },
   "devDependencies": {
+    "vitest": "^3.2.7",
     "wrangler": "^4.76.0"
   },
   "dependencies": {

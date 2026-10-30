@@ -15,9 +15,9 @@ A web app that turns a Bluetooth fitness bike into a Street View "indoor ride" e
 - Web browsers that support Web Bluetooth and passkeys (Chrome/Edge, excluding iOS versions)
 
 ## Project Structure
-- `public/` Static assets (`index.html`, `app.js`)
+- `public/` Static assets (`index.html` and ES modules, entry `app.js`)
 - `src/` Cloudflare Worker (`src/index.js`)
-- `SPEC.md` Full specification and API behavior
+- `spec.md` Full specification and API behavior
 - `DEPLOY.md` Detailed deployment steps
 - `wrangler.toml` Wrangler configuration example
 
@@ -50,6 +50,7 @@ npx wrangler d1 create svr-db
 ## Development
 - Local dev: `npm run dev` (http://127.0.0.1:8787)
 - Edge preview: `npm run preview`
+- Tests: `npm test`
 
 ## Production Deploy (local-only config)
 Keep `wrangler.toml` in Git and store production routes/IDs in a local-only config:
@@ -76,4 +77,4 @@ npx wrangler deploy --config wrangler.production.toml
 - Local: `.dev.vars` only
 
 ## Others
-See [SPEC.md](SPEC.md) for details.
+See [spec.md](spec.md) for details.

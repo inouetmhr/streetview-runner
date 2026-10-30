@@ -22,20 +22,26 @@
 ## Interfaces
 
 ### Routes (Worker)
-- GET `/api/status`
-  - 200 `{ ok: true, status: { lat:number, lng:number, heading:number, ts:number } }`
-  - With D1 enabled, status is derived from the latest history point (any day).
+- GET `/api/status?day=YYYY-MM-DD`
+  - 200 `{ ok: true, status: { lat:number, lng:number, heading:number, ts:number }, dailyDistanceMeters:number, day:string }`
+  - With D1 enabled, status is derived from the latest history point (any day). `dailyDistanceMeters` sums the given ride day (defaults to the server's UTC day).
 - POST `/api/status`
   - Body `{ location:{ lat:number, lng:number, heading?:number } }`
-  - 200 `{ ok: true }`; 400 on invalid/missing fields. No server-side persistence when D1 is enabled.
+  - 200 `{ ok: true }`; 400 on invalid/missing fields. No server-side persistence; kept for compatibility and not called by the client.
 - GET `/api/history?day=YYYY-MM-DD`
   - 200 `{ ok: true, items: Array<{ lat,lng,heading,ts }>, summary:{ distanceMeters:number, count:number } }`; day defaults to today.
 - GET `/api/history?from=YYYY-MM-DD&to=YYYY-MM-DD`
   - 200 `{ ok: true, items: Array<{ lat,lng,heading,ts }>, summary:{ distanceMeters:number, count:number } }`
+  - The range is inclusive and limited to 31 days; wider ranges return 400.
 - POST `/api/history`
   - Body `{ point:{ lat:number, lng:number, heading?:number, ts?:number, day?:string } }`
-  - 200 `{ ok: true }`; 400 on invalid input.
-- Errors: 405 Method Not Allowed with `Allow` header for wrong method.
+  - 200 `{ ok: true }`; 400 on invalid input: lat outside −90..90, lng outside −180..180, `ts` more than 24 h from server time, or `day` not a valid date within ±1 day of the server's UTC day.
+- Errors: 405 Method Not Allowed with `Allow` header for wrong method; 500 returns `{ error: "internal error" }` without details.
+
+### Ride Day
+- A ride day is the user's **local** calendar day with the rollover at **03:00** local time (a ride at 02:30 counts toward the previous day).
+- The client computes it (`rideDay()` in `public/geo.js`) and sends it as `point.day` and `GET /api/status?day=`.
+- History rows written before this change use UTC days; they are not migrated.
 
 ### Authentication (Passkey)
 - Library: `@simplewebauthn/server@^13` (server) and optionally `@simplewebauthn/browser@^13` (client).
@@ -122,8 +128,8 @@ Notes:
   - further advance if there still are distance to go
 - On Maps `position_changed` event
   - save last position to localStorage on every event.
-  - persist status to cloud every ≥100 m.
-  - persist history to cloud every ≥100 m.
+  - persist history to cloud every ≥100 m (status derives from history; no separate status save).
+  - extend the mini map trail polyline (no per-step markers, so map objects stay bounded).
   - update daily distance in localStorage from every delta.
   - do not persist the initial position immediately after login.
 
@@ -171,9 +177,10 @@ Notes:
    - Edit username: `POST /api/auth/username` updates display name; side pane reflects change.
 
 ## Deliverables
-- Frontend: `public/app.js`, `public/index.html` (labels as needed), audio + rate limiting.
-- Worker: `src/index.js`. 
-- Docs: this spec at `/SPEC.md`.
+- Frontend: `public/index.html` and ES modules: `app.js` (entry, Street View movement), `ble.js` (FTMS), `api.js` (Worker API client), `geo.js` (geometry/dates, shared with the Worker), `auth-ui.js`, `history-view.js`.
+- Worker: `src/index.js` (entry + route table), `src/auth.js`, `src/history.js`, `src/lib.js`.
+- Tests: `src/__tests__/*.test.js` (vitest, `npm test`).
+- Docs: this spec at `/spec.md`.
 
 ## TODO (tobe implemented in the future)
 - nothing now.

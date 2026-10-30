@@ -1,9 +1,9 @@
 # Repository Guidelines
 
 ## Project Structure & Modules
-- `SPEC.md` : Specification of this web application.
-- `src/`: Cloudflare Worker code. Entry is `src/index.js` exporting `fetch`.
-- `public/`: Static assets served via Wrangler assets (`index.html`, `app.js`).
+- `spec.md` : Specification of this web application.
+- `src/`: Cloudflare Worker code. Entry is `src/index.js` exporting `fetch`; handlers live in `src/auth.js` and `src/history.js`, helpers in `src/lib.js`.
+- `public/`: Static assets served via Wrangler assets (`index.html` plus ES modules `app.js`, `api.js`, `ble.js`, `geo.js`, `auth-ui.js`, `history-view.js`). `geo.js` is also imported by the Worker.
 - `wrangler.toml`: Worker, assets, and KV configuration.
 - `.dev.vars`: Local env vars for `wrangler dev` (git-ignored).
 - `.wrangler/`: Local simulator state (git-ignored).
@@ -19,10 +19,10 @@
 - JavaScript (ES Modules, `"type":"module"`). Use 2-space indent, double quotes, and semicolons.
 - Filenames: lower-case with dashes or simple names (e.g., `index.js`, `app.js`).
 - Functions/vars: `camelCase`; constants: `UPPER_SNAKE_CASE`.
-- Routes live in `fetch` within `src/index.js` (e.g., `/api/status`, `/api/history`). Keep handlers small and pure where possible.
+- Routes are declared in route tables (`AUTH_ROUTES`, `HISTORY_ROUTES`) merged in `src/index.js`; wrap handlers with `requireSession` / `withOrigin`. Keep handlers small and pure where possible.
 
 ## Testing Guidelines
-- No test harness is configured yet. If adding tests, prefer `vitest` and place files as `src/**/*.test.js` or `src/__tests__/*`. Keep API handlers factored for unit testing.
+- `npm test` runs vitest (with `TZ=Asia/Tokyo`). Tests live in `src/__tests__/*.test.js`; do not put test files under `public/` (it is served as-is). Keep API handlers factored for unit testing.
 - Manual checks: run `npm run dev` and exercise endpoints: `GET /api/status?userId=...`, `GET/POST /api/history`.
 
 ## Commit & Pull Requests
